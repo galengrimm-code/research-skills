@@ -65,18 +65,37 @@ bash ~/.claude/skills/_research-lib/env-safe-edit.sh
 ```
 This creates a timestamped backup in `.env-backups/` and refuses to back up an empty/broken file (defense against a known failure mode where a broken in-place rewrite destroyed the file, then a "backup" step happily copied the empty result over the good backup).
 
-The skills source from a single `.env` file (deep-research's) — no duplicates. Most keys are free-tier-friendly:
+The skills source from a single `.env` file (deep-research's) — no duplicates. Most services are free-tier-friendly.
 
-| Service | Free tier | Used for |
+### Services that take API keys
+
+| Service | Free tier | Wired into | Used for |
+|---|---|---|---|
+| **SerpAPI** ([serpapi.com](https://serpapi.com)) | 100 searches/month | All 3 skills | Google-quality search |
+| **Serper** ([serper.dev](https://serper.dev)) | 2,500 queries on signup | All 3 skills | Alternative web search (cheaper) |
+| **Firecrawl** ([firecrawl.dev](https://firecrawl.dev)) | 500 lifetime credits | All 3 skills (tier-2 scrape) | Webpage scraping |
+| **OpenAlex** ([openalex.org](https://openalex.org)) | $1/day allowance | `/research`, `/content-research` | Academic literature |
+| **Unpaywall** ([unpaywall.org](https://unpaywall.org)) | Free (email-only) | `/research`, `/content-research` | Open-access PDF resolution |
+| **Listen Notes** ([listennotes.com/api](https://listennotes.com/api)) | 30 results/query | `/research`, `/content-research` | Podcast search + transcripts |
+| **GitHub** ([github.com/settings/tokens](https://github.com/settings/tokens)) | 5,000 req/hour authenticated | All 3 skills | Code search, Security Advisory Database (CVE→package), repo discovery |
+| **Exa** ([exa.ai](https://exa.ai)) | $10 trial credits | `/research`, `/deep-research` | Semantic "find more like this" search |
+
+### Services with no auth required
+
+| Service | Wired into | Used for |
 |---|---|---|
-| **SerpAPI** ([serpapi.com](https://serpapi.com)) | 100 searches/month | Google-quality search |
-| **Serper** ([serper.dev](https://serper.dev)) | 2,500 queries on signup | Alternative web search (cheaper) |
-| **Firecrawl** ([firecrawl.dev](https://firecrawl.dev)) | 500 lifetime credits | Webpage scraping |
-| **OpenAlex** ([openalex.org](https://openalex.org)) | Unlimited (email-key for rate-lift) | Academic literature |
-| **Unpaywall** ([unpaywall.org](https://unpaywall.org)) | Free | Open-access PDF resolution |
-| **Listen Notes** ([listennotes.com/api](https://listennotes.com/api)) | 30 results/query | Podcast search + transcripts |
+| **Wayback Machine CDX** ([web.archive.org](https://web.archive.org)) | `/content-research`, `/deep-research` | Historical web captures — deleted-page recovery, original security advisory archaeology |
 
-You can install with no keys and the skills still run — they just skip sources they can't authenticate to and note "gaps" in the report. Start with **SerpAPI or Serper + Firecrawl** as a minimum viable setup.
+### Local tools (no API, run on your machine)
+
+| Tool | Wired into | Purpose |
+|---|---|---|
+| **WebFetch** (Claude built-in) | All 3 skills (tier-1) | First-attempt URL fetcher before falling back to Firecrawl |
+| **yt-dlp** | All 3 skills | YouTube transcript extraction (uses auto-captions when available) |
+| **faster-whisper** | `/content-research` | Audio transcription on local GPU when a podcast has no available transcript |
+| **Playwright** | All 3 skills (fallback) | Scraper of last resort for sites that block WebFetch and Firecrawl |
+
+You can install with no keys and the skills still run — they just skip sources they can't authenticate to and note "gaps" in the report. Start with **SerpAPI or Serper + Firecrawl + GitHub PAT** as a minimum viable setup.
 
 ### 2. Personal context (optional but recommended)
 
