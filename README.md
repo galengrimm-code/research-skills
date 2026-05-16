@@ -1,6 +1,6 @@
 # research-skills
 
-> Three complementary research skills for Claude Code: general internet research, security-focused exposure analysis, and full corpus extraction. v3.0
+> Three complementary research skills for Claude Code: general internet research, security-focused exposure analysis, and full corpus extraction. v3.0.1
 
 Built for solo developers and small teams who want **rigorous, sourced, repeatable** research — not vibes-summarized blog posts. Each skill produces structured artifacts (REPORT.md + raw scrapes + extracts) you can revisit months later.
 
@@ -58,6 +58,12 @@ Copy `.env.example` to `skills/deep-research/.env` and fill in keys:
 cp .env.example ~/.claude/skills/deep-research/.env
 # then edit the file with your keys
 ```
+
+**Safety tip:** before any future edit of this file, use the included safety helper to back up:
+```bash
+bash ~/.claude/skills/_research-lib/env-safe-edit.sh
+```
+This creates a timestamped backup in `.env-backups/` and refuses to back up an empty/broken file (defense against a known failure mode where a broken in-place rewrite destroyed the file, then a "backup" step happily copied the empty result over the good backup).
 
 The skills source from a single `.env` file (deep-research's) — no duplicates. Most keys are free-tier-friendly:
 

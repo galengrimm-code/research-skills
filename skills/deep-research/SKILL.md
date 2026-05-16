@@ -1,6 +1,6 @@
 ---
 name: deep-research
-version: "3.0"
+version: "3.0.1"
 description: Deep research on AI news, security advisories, tech articles, and industry topics. Scrapes articles, YouTube transcripts, PDFs, and related sources across the internet, then synthesizes into exposure analysis for the user's tech stack. Invoke with /deep-research followed by pasted article text, URLs, or a topic description.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -14,7 +14,7 @@ Comprehensive internet research that goes beyond Claude's built-in web search. U
 Export API keys from `.env` file and verify yt-dlp. Run this block first, every time:
 
 ```bash
-source ~/.claude/skills/deep-research/.env && echo "Keys: SERPAPI=${SERPAPI_KEY:+OK} SERPER=${SERPER_API_KEY:+OK} FIRECRAWL=${FIRECRAWL_API_KEY:+OK} EXA=${EXA_API_KEY:+OK} GITHUB=${GITHUB_TOKEN:+OK}"
+source ~/.claude/skills/deep-research/.env && echo "Keys: SERPAPI=${SERPAPI_KEY:+OK} SERPER=${SERPER_API_KEY:+OK} FIRECRAWL=${FIRECRAWL_API_KEY:+OK} EXA=${EXA_API_KEY:+OK} GITHUB=${GITHUB_TOKEN:+OK} LISTEN=${LISTEN_API_KEY:+OK}"
 python -m yt_dlp --version
 ```
 
@@ -190,7 +190,39 @@ Search strategy:
 
 Scrape all discovered URLs. Use parallel Agent subagents for speed.
 
-**For articles/web pages, use Firecrawl:**
+**Wayback Machine archaeology (recommended for security advisories).** Vendors sometimes silently edit or delete embarrassing CVE disclosures. Before treating a current vendor advisory as the canonical source, check Wayback for historical captures:
+
+```bash
+# CDX query — list all captured snapshots of a URL
+curl -s "http://web.archive.org/cdx/search/cdx?url=VENDOR_ADVISORY_URL&output=json&fl=timestamp,original,statuscode&filter=statuscode:200&collapse=urlkey&limit=50" > _raw/wayback_cdx.json
+
+# Fetch a specific archived version (the `id_` modifier returns raw archived content without Wayback's frame):
+curl -s "http://web.archive.org/web/{timestamp}id_/{original_url}" > _raw/wayback_archived.html
+```
+
+When to use:
+- Vendor advisory page exists but feels incomplete (suspiciously short, missing version details)
+- Current page differs from what was originally reported in news coverage
+- Article references a vendor link that now 404s
+- Reverse-chronology: compare today's advisory to versions from 3-6 months ago to spot silent edits
+
+Cost: free, no auth, low rate limits — Wayback is the only reliable counter to silent CVE-disclosure edits.
+
+**Fetch tier strategy — try the cheapest tool that works.** Firecrawl has only 500 lifetime credits; conserve them.
+
+| Tier | Tool | Cost | Use for |
+|---|---|---|---|
+| 1 | **WebFetch** (Claude built-in) | Free | Static news, NVD pages, Wikipedia, gov/edu sources — most cases |
+| 2 | **Firecrawl** | 1 credit / page | Vendor security advisories on JS-heavy sites, PDFs, sites that block WebFetch |
+| 3 | **Playwright** | Free, slower | Auth-walled, captcha-protected |
+
+**Default to WebFetch.** Fall back to Firecrawl only when WebFetch returns near-empty content. Pre-flight check on Firecrawl credits:
+```bash
+curl -s "https://api.firecrawl.dev/v1/team/credit-usage" -H "Authorization: Bearer $FIRECRAWL_API_KEY"
+```
+If <50 credits remaining, warn user and aggressively prefer WebFetch.
+
+**For articles/web pages, use Firecrawl (tier 2):**
 ```bash
 curl -s -X POST "https://api.firecrawl.dev/v1/scrape" \
   -H "Authorization: Bearer $FIRECRAWL_API_KEY" \

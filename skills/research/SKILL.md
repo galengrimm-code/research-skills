@@ -1,6 +1,6 @@
 ---
 name: research
-version: "3.0"
+version: "3.0.1"
 description: General-purpose internet research on any topic — how-to guides, comparisons, explainers, landscape surveys, product research. Scrapes articles, YouTube transcripts, PDFs, and related sources, then synthesizes into a question-type-aware report. Invoke with /research followed by pasted text, URLs, or a topic. For security/vulnerability research with stack-exposure mapping, use /deep-research instead.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -14,7 +14,7 @@ General-purpose internet research. Same plumbing as `/deep-research` (SerpAPI, S
 Reuse the deep-research skill's API keys. One source of truth — no duplicate `.env`.
 
 ```bash
-source ~/.claude/skills/deep-research/.env && echo "Keys: SERPAPI=${SERPAPI_KEY:+OK} SERPER=${SERPER_API_KEY:+OK} FIRECRAWL=${FIRECRAWL_API_KEY:+OK} OPENALEX=${OPENALEX_KEY:+OK} UNPAYWALL=${UNPAYWALL_EMAIL:+OK}"
+source ~/.claude/skills/deep-research/.env && echo "Keys: SERPAPI=${SERPAPI_KEY:+OK} SERPER=${SERPER_API_KEY:+OK} FIRECRAWL=${FIRECRAWL_API_KEY:+OK} OPENALEX=${OPENALEX_KEY:+OK} UNPAYWALL=${UNPAYWALL_EMAIL:+OK} EXA=${EXA_API_KEY:+OK} GITHUB=${GITHUB_TOKEN:+OK} LISTEN=${LISTEN_API_KEY:+OK}"
 python -m yt_dlp --version
 ```
 
@@ -178,9 +178,63 @@ Parse results for: `id`, `doi`, `title`, `abstract_inverted_index` (decode it), 
 
 **Source priority for academic-flavored topics:** OpenAlex results > Web search results from edu/gov/research domains > general web search. For pure dev/practical topics, web search results lead.
 
+**GitHub Code Search** — real-world implementation patterns (skip if `GITHUB_TOKEN` empty).
+
+When to use it:
+- Mode is How-to and topic concerns code, libraries, frameworks, APIs, or implementation patterns
+- User asks "how do real apps use X" or "show me a working example of Y"
+- Library/framework documentation is thin or vague — production code fills the gap
+- Skip for non-dev topics (no value for agronomy, business, security policy)
+
+GitHub-authenticated requests run at 5,000/hour (vs 60/hour unauthed) — well above what a single research run needs.
+
+```bash
+# Code search across all public repos (returns ranked results with snippets):
+Q_ENCODED=$(echo "QUERY language:typescript" | python -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip()))")
+curl -s "https://api.github.com/search/code?q=${Q_ENCODED}&per_page=20" \
+  -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" > _raw/github_code.json
+
+# Repo search (find repos by topic — useful for "best libraries for X"):
+curl -s "https://api.github.com/search/repositories?q=TOPIC+stars:>500&sort=stars&order=desc&per_page=20" \
+  -H "Authorization: Bearer $GITHUB_TOKEN" \
+  -H "Accept: application/vnd.github+json" > _raw/github_repos.json
+```
+
+Parse for: `items[].repository.full_name`, `items[].path` (file path), `items[].text_matches[].fragment` (code snippet with the match), `items[].html_url` (link to the source file on GitHub). Surface the most-starred repositories first — these are the patterns people have validated in production.
+
+**Cost tip:** prefer `search/repositories` for landscape mode (cheap, returns top repos by stars), `search/code` for how-to mode (find exact implementation patterns).
+
+**Listen Notes** — podcast discovery (skip if `LISTEN_API_KEY` empty).
+
+When to use it:
+- Topic likely has substantial podcast coverage (business strategy, dev tools, agriculture, health, politics, popular tech)
+- Mode is Landscape, Explainer, or Comparison
+- User asks "what are people saying" or wants current practitioner discourse
+- Skip for narrow technical how-to questions — podcasts rarely cover those at useful depth
+
+Free-tier quirks:
+- Rate limit 2 req/sec (throttle parallel queries — sleep 0.6s between)
+- 10 results per query default
+- Full transcripts are PRO-only, but `transcripts_highlighted` snippets returned for free on search hits where keywords are in audio
+- Header is `X-ListenAPI-Key`, NOT `Authorization: Bearer`
+
+```bash
+Q_ENCODED=$(echo "QUERY" | python -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip()))")
+curl -s "https://listen-api.listennotes.com/api/v2/search?q=${Q_ENCODED}&type=episode&language=English" \
+  -H "X-ListenAPI-Key: $LISTEN_API_KEY" > _raw/listennotes_search.json
+sleep 0.6
+```
+
+Parse for: `results[].title_original`, `results[].audio` (URL — for Whisper fallback if transcript needed), `results[].audio_length_sec`, `results[].pub_date_ms`, `results[].podcast.title_original`, `results[].transcripts_highlighted` (real verbatim quotes — usable as primary-source content even without PRO).
+
+**Pattern for substantive coverage:** fire 3-5 angled queries (broad term, critique variant, current-state variant, named-expert) to get range. Throttle ≥600ms between.
+
+**When snippets aren't enough:** download audio via Python urllib (bash curl-in-loops fails on Windows), run faster-whisper locally (~18x realtime on modern GPU). Full pattern documented in `/content-research`.
+
 Source bias for general research: favor primary sources, canonical documentation, authoritative practitioners, recent high-quality blog posts. Deprioritize SEO spam, listicles, AI-generated summary sites. When you see a source cited repeatedly across other sources, that's a signal to fetch the original.
 
-Deduplicate URLs across all three sources (SerpAPI / Serper / OpenAlex).
+Deduplicate URLs across all four sources (SerpAPI / Serper / OpenAlex / Listen Notes).
 
 ## Step 3b: RESOLVE OA full-text via Unpaywall (when DOIs are present)
 
@@ -211,7 +265,23 @@ If a free PDF URL is found, route through Firecrawl in Step 4 like any other PDF
 
 Scrape discovered URLs. Parallelize with Agent subagents (up to 5 concurrent).
 
-**Articles / blog posts / docs — Firecrawl:**
+**Fetch tier strategy — try the cheapest tool that works.** Firecrawl has only 500 lifetime credits; squander them and they're gone. Static pages don't need Firecrawl. Default order:
+
+| Tier | Tool | Cost | Use for |
+|---|---|---|---|
+| 1 | **WebFetch** (Claude built-in) | Free | Static blog posts, news, Wikipedia, .edu/.gov pages, simple HTML — most cases |
+| 2 | **Firecrawl** | 1 credit / page | JS-heavy SPAs, modern marketing sites, PDFs (native handling), sites that block WebFetch |
+| 3 | **Playwright** | Free, slower | Sites that block both above; auth-walled with cookies |
+
+**Default to WebFetch first.** Try it on the URL. If you get back near-empty content, a captcha-style blob, or a "JavaScript required" message — fall back to Firecrawl. Anywhere this happens reliably (e.g., known SPA domains), document the pattern locally and skip WebFetch for that domain next time.
+
+**Pre-flight Firecrawl credit check** (run once at start of substantive runs):
+```bash
+curl -s "https://api.firecrawl.dev/v1/team/credit-usage" -H "Authorization: Bearer $FIRECRAWL_API_KEY"
+```
+If remaining credits < 50, warn the user and bias more aggressively toward WebFetch.
+
+**Articles / blog posts / docs — Firecrawl (tier 2):**
 ```bash
 curl -s -X POST "https://api.firecrawl.dev/v1/scrape" \
   -H "Authorization: Bearer $FIRECRAWL_API_KEY" \

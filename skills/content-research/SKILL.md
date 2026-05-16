@@ -1,6 +1,6 @@
 ---
 name: content-research
-version: "3.0"
+version: "3.0.1"
 description: Extract EVERYTHING a company, person, or domain has published into an organized local archive. Not a synthesized report — an indexed content dossier with all website pages, YouTube transcripts, podcast audio transcribed via local Whisper (faster-whisper on GPU), press coverage, and social snippets. Use when the user wants a complete "give me everything this target has ever put out" pull, not a research answer. Invoke with /content-research followed by a company name, person name, or URL.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -24,7 +24,7 @@ Builds a complete local content archive for a target (company, person, or domain
 Reuse the deep-research skill's keys — single source of truth.
 
 ```bash
-source ~/.claude/skills/deep-research/.env && echo "Keys: SERPAPI=${SERPAPI_KEY:+OK} SERPER=${SERPER_API_KEY:+OK} FIRECRAWL=${FIRECRAWL_API_KEY:+OK} OPENALEX=${OPENALEX_KEY:+OK} UNPAYWALL=${UNPAYWALL_EMAIL:+OK}"
+source ~/.claude/skills/deep-research/.env && echo "Keys: SERPAPI=${SERPAPI_KEY:+OK} SERPER=${SERPER_API_KEY:+OK} FIRECRAWL=${FIRECRAWL_API_KEY:+OK} OPENALEX=${OPENALEX_KEY:+OK} UNPAYWALL=${UNPAYWALL_EMAIL:+OK} GITHUB=${GITHUB_TOKEN:+OK} EXA=${EXA_API_KEY:+OK} LISTEN=${LISTEN_API_KEY:+OK}"
 python -m yt_dlp --version 2>&1 || pip install --user yt-dlp 2>&1 | tail -3
 ```
 
@@ -137,8 +137,28 @@ curl -s "https://serpapi.com/search.json?engine=youtube&search_query=TARGET&api_
 # Then for the found handle:
 python -m yt_dlp --flat-playlist --print "%(id)s|%(title)s|%(duration)s|%(view_count)s|%(upload_date)s" "https://www.youtube.com/@HANDLE/videos" > _raw/youtube_videos.txt
 
-# 4. Podcast discovery — search for Spotify/Apple presence
-curl -s "https://serpapi.com/search.json?q=TARGET+podcast+Spotify+OR+Apple&api_key=$SERPAPI_KEY&num=20" > _raw/search/podcast.json
+# 4. Podcast discovery — Listen Notes API (replaces SerpAPI Spotify/Apple scraping)
+# Skip if LISTEN_API_KEY empty.
+# Free tier: 2 req/sec rate limit, 10 results per query. Throttle ≥600ms between calls.
+TARGET_ENC=$(echo "TARGET" | python -c "import sys,urllib.parse; print(urllib.parse.quote(sys.stdin.read().strip()))")
+
+# a. Find podcasts BY the target (target hosts a show under their name):
+curl -s "https://listen-api.listennotes.com/api/v2/search?q=${TARGET_ENC}&type=podcast&language=English" \
+  -H "X-ListenAPI-Key: $LISTEN_API_KEY" > _raw/listennotes_podcasts_by.json
+sleep 0.6
+
+# b. Find episodes WHERE the target appears (guest spots, topical mentions):
+curl -s "https://listen-api.listennotes.com/api/v2/search?q=${TARGET_ENC}&type=episode&language=English" \
+  -H "X-ListenAPI-Key: $LISTEN_API_KEY" > _raw/listennotes_episodes_about.json
+sleep 0.6
+
+# c. If target has its own podcast domain (e.g., podcast.targetsite.com), one-shot all their episodes:
+# curl -s "https://listen-api.listennotes.com/api/v2/podcasts/domains/podcast.targetsite.com" \
+#   -H "X-ListenAPI-Key: $LISTEN_API_KEY" > _raw/listennotes_domain.json
+
+# d. Once you've ID'd a specific podcast worth full enumeration, fetch full episode list:
+# curl -s "https://listen-api.listennotes.com/api/v2/podcasts/PODCAST_ID?sort=recent_first" \
+#   -H "X-ListenAPI-Key: $LISTEN_API_KEY" > _raw/listennotes_podcast_full.json
 
 # 5. Press / social discovery
 curl -s "https://serpapi.com/search.json?q=TARGET+interview+OR+podcast+OR+article&api_key=$SERPAPI_KEY&num=20" > _raw/search/press.json
@@ -232,6 +252,16 @@ Authenticated GitHub calls run at 5,000 req/hour — well above what a single ar
 
 ## Step 4: SCRAPE in parallel waves
 
+**Firecrawl budget management.** Entity archives are credit-heavy by nature (often 30-80 pages per run). Pre-flight check before starting:
+```bash
+curl -s "https://api.firecrawl.dev/v1/team/credit-usage" -H "Authorization: Bearer $FIRECRAWL_API_KEY"
+```
+If <100 credits remaining and the archive will need 30+ pages, warn the user before proceeding — either upgrade Firecrawl, use WebFetch fallback (slower fidelity), or scope down the archive (skip retail pages, skip parent-entity sites). The skill should not silently burn through the last 100 credits.
+
+**WebFetch tier (Claude built-in, free) is useful for:** Wikipedia entries, .edu/.gov pages about the target, simple blog posts the target is referenced in. Reserve Firecrawl for the target's own marketing site (typically JS-heavy), shop pages, complex modern WordPress sites.
+
+
+
 ### Wave A: Website pages
 Fire off parallel Firecrawl scrapes for every discovered sitemap URL. **Bash `&` + `wait` pattern** runs up to 20 concurrent.
 
@@ -283,19 +313,40 @@ for v in glob.glob('*.vtt'): os.remove(v)
 
 **Expect ~10-20% of videos to have no captions** — shorts, very new uploads, music-heavy content. Note which ones in the channel index.
 
-### Wave C: Podcast + Press
+### Wave C: Podcast metadata + audio (Listen Notes primary, page-scrape fallback)
 
-For each Spotify/Apple/SoundCloud/Podbean URL found in Step 3:
+**Default path: Listen Notes API** (replaces SerpAPI-discovery + Firecrawl-page-scraping of Spotify/Apple/SoundCloud/Podbean).
+
+Parse `_raw/listennotes_podcasts_by.json` and `_raw/listennotes_episodes_about.json` from Step 3. For each relevant podcast/episode:
+
+1. **Audio URL is returned directly** as `audio` field — no page scraping needed. Listen Notes proxies to the publisher CDN (Megaphone, Libsyn, Buzzsprout, etc.) and follows redirects to the actual MP3.
+
+2. **Episode metadata is structured** — title, description, duration (`audio_length_sec`), pub date (`pub_date_ms`), full podcast metadata via `podcast` field. No HTML parsing.
+
+3. **Free-tier transcript snippets** available when search terms hit indexed transcripts via the `transcripts_highlighted` array on search results. Pull these as primary-source verbatim quotes even without a full Whisper transcription run.
+
+4. **For deeper episode detail**, fetch by ID:
+   ```bash
+   curl -s "https://listen-api.listennotes.com/api/v2/episodes/EPISODE_ID" \
+     -H "X-ListenAPI-Key: $LISTEN_API_KEY" > _raw/episodes/ep_SLUG.json
+   sleep 0.6
+   ```
+   Note: full transcript field is PRO-tier; free tier returns the upgrade message. For full transcripts, download audio + Whisper (Wave C-bis).
+
+**Fallback path: Page scraping (only when Listen Notes doesn't index the show).** Some niche podcasts don't appear in Listen Notes — for those, fall back to the legacy Firecrawl approach:
+
 ```bash
+# LEGACY: only when Listen Notes returns no results for the target
 curl -s -X POST "https://api.firecrawl.dev/v1/scrape" -H "Authorization: Bearer $FIRECRAWL_API_KEY" \
   -H "Content-Type: application/json" \
   -d '{"url": "URL", "formats": ["markdown"]}' > /tmp/pod.json
 ```
 
-- **Spotify** often returns a reCAPTCHA landing page BUT the episode listing is usually still in the markdown — check it.
-- **Apple Podcasts** frequently region-locks ("This episode can't be played in your country"). Spotify is usually the backup.
-- **SoundCloud** works via Firecrawl.
-- **Podbean** — episode pages work via Firecrawl; iframe/player embeds refuse. Scrape the `/e/<slug>/` episode URL, not the player-v2 embed.
+Notes on the page-scrape fallback (legacy):
+- **Spotify** often returns reCAPTCHA. Skip — Listen Notes covers Spotify-distributed shows.
+- **Apple Podcasts** region-locks frequently. Skip — Listen Notes is better.
+- **SoundCloud** works via Firecrawl if needed.
+- **Podbean** — scrape `/e/<slug>/` episode URL, not the player-v2 embed (yt-dlp fails on player-v2).
 
 ### Wave C-bis: Audio transcription via Whisper (when captions don't exist)
 
@@ -321,7 +372,18 @@ python -c "from faster_whisper import WhisperModel; print('faster-whisper ready'
 nvidia-smi 2>&1 | grep "CUDA Version" | head -1
 ```
 
-**Step 1 — extract direct MP3 URLs** from episode pages. Podbean, Libsyn, Buzzsprout, and most Simplecast/Megaphone pages embed the MP3 URL as JSON-LD `contentUrl`. Regex that:
+**Step 1 — get direct MP3 URLs.** TWO paths:
+
+**Path A (preferred, when Listen Notes indexed the episode):** parse the `audio` field directly from `_raw/listennotes_*.json` responses. The URL is already a CDN-redirecting proxy that resolves to the actual MP3. No HTML parsing needed.
+
+```python
+import json
+data = json.load(open('_raw/listennotes_episodes_about.json'))
+for ep in data['results']:
+    print(f"{ep['title_original']}: {ep['audio']}")  # ep['audio'] is the URL to download
+```
+
+**Path B (fallback, only for episodes Listen Notes doesn't index):** extract from episode pages. Podbean, Libsyn, Buzzsprout, and most Simplecast/Megaphone pages embed the MP3 URL as JSON-LD `contentUrl`. Regex that:
 
 ```python
 import re, urllib.request

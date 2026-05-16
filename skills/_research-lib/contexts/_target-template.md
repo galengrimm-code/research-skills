@@ -76,8 +76,8 @@ filled_at: "2026-05-12"
 ---
 
 ### Why this target?
-Nathan is leading sales at NutraDrip and asked you for an outside read on
-their playbook. the user has domain-corpus context and isn't inside the
+Sarah is leading sales at Acme Corp and asked you for an outside read on
+their playbook. you have domain context and isn't inside the
 company's narrative, so he can spot what NutraDrip is taking for granted.
 
 ### What outcome does the requester need?
@@ -102,7 +102,7 @@ weak."
 
 If `/content-research` is run on a target where engagement is genuinely
 "self / for general reference" (e.g., archiving an agronomy practitioner's
-content for future you-only reference), set `engagement_for: self` and
+content for future your-own reference), set `engagement_for: self` and
 skip the prose sections. The template still gets written as `_context.md`
 in the archive, but it's lighter.
 
