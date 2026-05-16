@@ -1,0 +1,31 @@
+# Real API keys — NEVER commit
+.env
+.env.local
+.env.production
+**/.env
+**/.env.local
+**/.env.production
+
+# Personal context (gitignored so each user's stays local)
+skills/_research-lib/contexts/self.md
+skills/_research-lib/contexts/self-*.md
+
+# Generated research outputs
+**/_raw/
+**/_extracts.md
+**/REPORT.md
+topics/
+derived/
+meta/
+
+# OS / editor cruft
+.DS_Store
+Thumbs.db
+desktop.ini
+*.bak
+*.tmp
+.vscode/
+.idea/
+
+# Logs
+*.log
