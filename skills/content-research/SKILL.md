@@ -1,6 +1,6 @@
 ---
 name: content-research
-version: "3.0.1"
+version: "3.0.2"
 description: Extract EVERYTHING a company, person, or domain has published into an organized local archive. Not a synthesized report — an indexed content dossier with all website pages, YouTube transcripts, podcast audio transcribed via local Whisper (faster-whisper on GPU), press coverage, and social snippets. Use when the user wants a complete "give me everything this target has ever put out" pull, not a research answer. Invoke with /content-research followed by a company name, person name, or URL.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -88,13 +88,23 @@ This context goes into `_context.md` inside the archive folder (Step 2 will crea
 
 ## Step 2: CREATE the archive folder
 
-**Default location:** `~/Documents/AI\Content extraction\{slug}-research-YYYY-MM-DD\` per `CONVENTIONS.md` Rule 1.
+**Step 2a: Resolve topic-area** (per `CONVENTIONS.md` Rule 11). Track which resolution path was used; you'll disclose it at the end of the run (Step 6).
+- **(a) Arg:** If caller passed `--topic-area=Foo` or named one in the prompt, use it. Create `~/Documents/AI\Content extraction\topics\Foo\` (with a `README.md` stub) if it doesn't exist. Source = `arg`.
+- **(b) Infer:** Otherwise, list existing topic-areas. On bash: `ls -d ~/Documents/AI/Content\ extraction/topics/*/ 2>/dev/null`. If listing fails, fall back to asking (skip to step c). **Only auto-route if you are ≥90% confident** the target fits an existing topic-area — e.g., target name matches an existing folder, or target is a well-known figure in that area's NAMES list. Borderline cases must ask. Source = `inferred`.
+- **(c) Ask:** If ambiguous or listing failed, ask the user once: `"Which topic-area? (Existing: <list>. Or 'new:Foo' to create one. Or 'ungrouped' to keep at topics/ root.)"` Source = `asked`.
+- **(d) Ungrouped:** If user picks `ungrouped` or no topic-area is appropriate, set `TopicArea` to empty and skip the `{TopicArea}\` segment everywhere below (no double slashes, no literal `{TopicArea}` in paths or links).
+
+**Step 2b: Compute path.**
+
+**Default location** per `CONVENTIONS.md` Rules 1 + 11:
+- With topic-area: `~/Documents/AI\Content extraction\topics\{TopicArea}\{slug}-research-YYYY-MM-DD\`
+- Ungrouped: `~/Documents/AI\Content extraction\topics\{slug}-research-YYYY-MM-DD\`
 
 - Slug: lowercase, hyphenated, max 50 chars, stopwords stripped. Examples: "Soil Works LLC" → `soilworks`, "Calibrated Agronomy" → `calibrated-agronomy`, "Glen Rabenberg" → `glen-rabenberg`.
 - Date: ISO 8601, today's date (the day the skill runs).
 - If folder already exists (same-day re-run), append `-v2`, `-v3`, etc. **Never overwrite.**
 
-**Legacy note:** Entity archives created before 2026-05-15 use the date-less form `{slug}-research/` and live in the same parent. Don't retro-rename them — new convention only applies to new runs.
+**Legacy note:** Entity archives created before 2026-05-15 use the date-less form `{slug}-research/` and live at `Content extraction\topics\{TopicArea}\` (after the 2026-05-20 topic-area restructure) or directly at `Content extraction\` root (oldest, never moved). Don't retro-rename them — new convention only applies to new runs.
 
 Standard folder structure (create all up front — empty folders get removed at the end):
 
@@ -587,26 +597,25 @@ print(f'Transcripts: {files} files, {total_words:,} words, {total_chars:,} chars
 
 After the entity archive's own INDEX.md is written, append one line to EACH of:
 
-1. **`~/Documents/AI\INDEX.md`** under "Entity archives" — format:
-   ```
-   - YYYY-MM-DD [content] [{Target}](Content%20extraction/{slug}-research-YYYY-MM-DD/) — {N} files, {one-line description}
-   ```
+1. **`~/Documents/AI\INDEX.md`** under "Entity archives" — path matches the output path resolution above:
+   - With topic-area: `- YYYY-MM-DD [content] [{Target}](Content%20extraction/topics/{TopicArea}/{slug}-research-YYYY-MM-DD/) — {N} files, {one-line description}`
+   - Ungrouped: `- YYYY-MM-DD [content] [{Target}](Content%20extraction/topics/{slug}-research-YYYY-MM-DD/) — {N} files, {one-line description}`
 
-2. **`~/Documents/AI\Content extraction\INDEX.md`** under the appropriate dated section — format:
-   ```
-   | [{slug}-research-YYYY-MM-DD](slug-research-YYYY-MM-DD/) | {Target} — {one-line description} | {N} |
-   ```
+2. **`~/Documents/AI\Content extraction\INDEX.md`** under the topic-area section for `{TopicArea}` (add the row to its entity-archives table). The link is relative to `Content extraction/`, so it includes the `topics/{TopicArea}/` prefix:
+   - With topic-area: `| [{slug}-research-YYYY-MM-DD](topics/{TopicArea}/{slug}-research-YYYY-MM-DD/) | {Target} — {one-line description} | {N} |`
+   - Ungrouped (add under an "Ungrouped" section): `| [{slug}-research-YYYY-MM-DD](topics/{slug}-research-YYYY-MM-DD/) | {Target} — {one-line description} | {N} |`
 
-If the dated section doesn't exist in the entity catalog yet (e.g., first run on a new date), add a new `### [Month Day, Year]` heading before the table.
+If the topic-area section doesn't exist in the entity catalog yet (e.g., first run for a new topic-area), add it. Don't fall back to a flat "by date" section — that's the old convention.
 
 **This is non-negotiable.** Per `CONVENTIONS.md` Rule 7, an archive that isn't indexed is an orphan and doesn't count as complete.
 
 ## Step 7: REPORT back to user
 
-In the final message, give a concise summary:
+In the final message, give a concise summary. The **first two lines are mandatory** so the user can verify the topic-area routing and exact save path without scrolling:
 
 ```
-Done. Extract at `{path}`.
+TopicArea: <Name or "ungrouped"> (source: arg|inferred|asked)
+Saved: {full path}
 
 **{N} files, {size}, {wordcount} transcribed words**
 
@@ -620,6 +629,8 @@ Done. Extract at `{path}`.
 
 Want me to push further? Best next targets: [a], [b], [c].
 ```
+
+If versioning was applied, append `(v{N})` to the Saved path. If a new topic-area was created, append `(new topic-area created)`.
 
 ---
 

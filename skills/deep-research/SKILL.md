@@ -1,6 +1,6 @@
 ---
 name: deep-research
-version: "3.0.1"
+version: "3.0.2"
 description: Deep research on AI news, security advisories, tech articles, and industry topics. Scrapes articles, YouTube transcripts, PDFs, and related sources across the internet, then synthesizes into exposure analysis for the user's tech stack. Invoke with /deep-research followed by pasted article text, URLs, or a topic description.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -375,25 +375,40 @@ Prepared for: the user
 
 Every run saves to disk. Path resolution per `CONVENTIONS.md`:
 
-1. **Output path:** `~/Documents/AI\Content extraction\topics\{slug}-security-YYYY-MM-DD\`
-   - `-security` suffix distinguishes deep-research output from `/research` topic syntheses
+1. **Resolve topic-area** (per `CONVENTIONS.md` Rule 11). Track which resolution path was used; you'll disclose it in step 6.
+   - **(a) Arg:** If caller passed `--topic-area=Foo` or named one in the prompt, use it. Create `~/Documents/AI\Content extraction\topics\Foo\` (with a `README.md` stub) if it doesn't exist. Source = `arg`.
+   - **(b) Infer:** Otherwise, list existing topic-areas. On bash: `ls -d ~/Documents/AI/Content\ extraction/topics/*/ 2>/dev/null`. If listing fails, fall back to asking (skip to step c). **Only auto-route if you are ≥90% confident** the security topic fits an existing area (e.g., CVE in a Supabase library → `Tech` if that area exists; vulnerability in an agronomy tool → `Agronomy`). Borderline cases must ask. Source = `inferred`.
+   - **(c) Ask:** If ambiguous or listing failed, ask the user once: `"Which topic-area? (Existing: <list>. Or 'new:Foo' to create one. Or 'ungrouped' to keep at topics/ root.)"` Source = `asked`.
+   - **(d) Ungrouped:** If user picks `ungrouped` or no topic-area is appropriate, set `TopicArea` to empty and skip the `{TopicArea}\` segment everywhere below (no double slashes, no literal `{TopicArea}` in paths or links).
+
+2. **Output path:**
+   - With topic-area: `~/Documents/AI\Content extraction\topics\{TopicArea}\{slug}-security-YYYY-MM-DD\`
+   - Ungrouped: `~/Documents/AI\Content extraction\topics\{slug}-security-YYYY-MM-DD\`
+   - `-security` suffix on the folder name (after slug) distinguishes deep-research output from `/research` topic syntheses
    - Slug: lowercase, hyphenated, max 50 chars, stopwords stripped
    - Date: ISO 8601, today's date
    - Same-day re-run: append `-v2`, `-v3`, etc.
 
-2. **Files written:**
+3. **Files written:**
    - `REPORT.md` — the deep-dive analysis (Option A — frontmatter per Step 5 template)
    - `BRIEFING.md` — the leadership briefing (Option B — if user chose Option C "Both")
    - `_raw/` subfolder — raw API responses, fetched HTML, transcripts (preserve untouched per `CONVENTIONS.md` Rule 5)
 
-3. **Append to master INDEX** — final step, mandatory. Add one line to `~/Documents/AI\INDEX.md` under "Topic syntheses":
-   ```
-   - YYYY-MM-DD [deep] [{Topic}](Content%20extraction/topics/{slug}-security-YYYY-MM-DD/) — exposure: {confirmed|likely|none}
-   ```
+4. **Append to master INDEX** — final step, mandatory. Add one line to `~/Documents/AI\INDEX.md` under "Topic syntheses". Path matches the output path resolution above:
+   - With topic-area: `- YYYY-MM-DD [deep] [{Topic}](Content%20extraction/topics/{TopicArea}/{slug}-security-YYYY-MM-DD/) — exposure: {confirmed|likely|none}`
+   - Ungrouped: `- YYYY-MM-DD [deep] [{Topic}](Content%20extraction/topics/{slug}-security-YYYY-MM-DD/) — exposure: {confirmed|likely|none}`
 
-4. **Append to entity catalog** — add a line to `~/Documents/AI\Content extraction\INDEX.md` under "Topic Syntheses" as appropriate.
+5. **Append to entity catalog** — also add a row to `~/Documents/AI\Content extraction\INDEX.md` under the appropriate topic-area's "Topic syntheses" table (or under the "Other topic syntheses (ungrouped)" section if ungrouped). Read the existing rows in the target table and match their column structure exactly — don't invent a new format. The link is relative to `Content extraction/`, so it includes the `topics/{TopicArea}/` prefix when topic-grouped, or just `topics/` when ungrouped:
+   - With topic-area row link: `[{slug}-security-YYYY-MM-DD](topics/{TopicArea}/{slug}-security-YYYY-MM-DD/)`
+   - Ungrouped row link: `[{slug}-security-YYYY-MM-DD](topics/{slug}-security-YYYY-MM-DD/)`
+   - If the target topic-area has no "Topic syntheses" table yet, add one with a header that matches the style of sibling topic-areas' tables.
 
-5. **Tell the user the exact path saved.** Format: `Saved: <full path>`. If versioning was applied, mention which version.
+6. **Tell the user the exact path saved AND the topic-area resolution.** Two-line format, mandatory on every run:
+   ```
+   TopicArea: <Name or "ungrouped"> (source: arg|inferred|asked)
+   Saved: <full path>
+   ```
+   If versioning was applied, append `(v{N})` to the path. If a new topic-area was created, append `(new topic-area created)`.
 
 **Never overwrite an existing report.** Security analyses especially: prior conclusions may be referenced for incident response.
 
@@ -442,4 +457,4 @@ Use the Agent tool to parallelize independent work:
 - yt-dlp runs entirely locally. No external service involved.
 - Only public internet content is fetched through these APIs. Never send internal Riverview URLs.
 - Firecrawl is SOC2 Type 2 certified. Can be self-hosted later if needed.
-- Output is saved automatically per Step 6 — see `~/Documents/AI\CONVENTIONS.md` for canonical rules. Default path: `Documents\AI\Content extraction\topics\{slug}-security-YYYY-MM-DD\`. The `-security` suffix distinguishes deep-research output from `/research` topic syntheses.
+- Output is saved automatically per Step 6 — see `~/Documents/AI\CONVENTIONS.md` for canonical rules (including Rule 11 on topic-area subfolders). Default path: `Documents\AI\Content extraction\topics\{TopicArea}\{slug}-security-YYYY-MM-DD\` (or `Documents\AI\Content extraction\topics\{slug}-security-YYYY-MM-DD\` if `ungrouped` — no `{TopicArea}` segment, no double slash). The `-security` is appended to the folder name (after `{slug}`), not to the slug itself; this distinguishes deep-research output from `/research` topic syntheses.

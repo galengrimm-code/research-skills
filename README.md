@@ -1,6 +1,6 @@
 # research-skills
 
-> Three complementary research skills for Claude Code: general internet research, security-focused exposure analysis, and full corpus extraction. v3.0.1
+> Three complementary research skills for Claude Code: general internet research, security-focused exposure analysis, and full corpus extraction. v3.0.2
 
 Built for solo developers and small teams who want **rigorous, sourced, repeatable** research — not vibes-summarized blog posts. Each skill produces structured artifacts (REPORT.md + raw scrapes + extracts) you can revisit months later.
 
@@ -191,7 +191,7 @@ Forcing all three into one skill makes the prompt too sprawling and the outputs 
 
 All three skills follow shared conventions documented in `~/Documents/AI/CONVENTIONS.md` (which you'd create on your end):
 
-- **Output paths:** `~/Documents/AI/Content extraction/topics/{slug}-YYYY-MM-DD/` (research, deep-research) or `~/Documents/AI/Content extraction/{slug}-research-YYYY-MM-DD/` (content-research)
+- **Output paths (v3.0.2+):** `~/Documents/AI/Content extraction/topics/{TopicArea}/{slug}-YYYY-MM-DD/` for `/research`; `~/Documents/AI/Content extraction/topics/{TopicArea}/{slug}-security-YYYY-MM-DD/` for `/deep-research` (the `-security` is appended to the folder name, not the slug itself); `~/Documents/AI/Content extraction/topics/{TopicArea}/{slug}-research-YYYY-MM-DD/` for `/content-research`. Skills resolve `{TopicArea}` per CONVENTIONS.md Rule 11 (caller arg → inferred from target if ≥90% confident → ask once if ambiguous → `ungrouped` falls back to `topics/` root with no `{TopicArea}` segment). Every run prints `TopicArea: X (source: arg|inferred|asked)` so you can verify routing at a glance.
 - **Frontmatter:** YAML at top of every REPORT.md with `target`, `slug`, `type`, `mode`, `run_date`, `status`, `apis_used`, `sources_count`, `gaps`, `tags`
 - **Append to master INDEX:** every run adds a line to `~/Documents/AI/INDEX.md` so you can find old research later
 

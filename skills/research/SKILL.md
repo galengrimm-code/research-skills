@@ -1,6 +1,6 @@
 ---
 name: research
-version: "3.0.1"
+version: "3.0.2"
 description: General-purpose internet research on any topic — how-to guides, comparisons, explainers, landscape surveys, product research. Scrapes articles, YouTube transcripts, PDFs, and related sources, then synthesizes into a question-type-aware report. Invoke with /research followed by pasted text, URLs, or a topic. For security/vulnerability research with stack-exposure mapping, use /deep-research instead.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -413,23 +413,38 @@ Mode: [How-to / Comparison / Explainer / Landscape]
 
 Every run saves to disk. Path resolution per `CONVENTIONS.md`:
 
-1. **Output path:** `~/Documents/AI\Content extraction\topics\{slug}-YYYY-MM-DD\`
+1. **Resolve topic-area** (per `CONVENTIONS.md` Rule 11). Track which resolution path was used; you'll disclose it in step 6.
+   - **(a) Arg:** If caller passed `--topic-area=Foo` or named one in the prompt, use it. Create `~/Documents/AI\Content extraction\topics\Foo\` (with a `README.md` stub) if it doesn't exist. Source = `arg`.
+   - **(b) Infer:** Otherwise, list existing topic-areas. On bash: `ls -d ~/Documents/AI/Content\ extraction/topics/*/ 2>/dev/null`. If listing fails, fall back to asking (skip to step c). **Only auto-route if you are ≥90% confident the target fits an existing topic-area** — e.g., the target name matches an existing folder, or the target is a well-known figure in that area's NAMES list. Borderline cases must ask. Source = `inferred`.
+   - **(c) Ask:** If ambiguous or listing failed, ask the user once: `"Which topic-area? (Existing: <list>. Or 'new:Foo' to create one. Or 'ungrouped' to keep at topics/ root.)"` Source = `asked`.
+   - **(d) Ungrouped:** If user picks `ungrouped` or no topic-area is appropriate, set `TopicArea` to empty and skip the `{TopicArea}\` segment everywhere below (no double slashes, no literal `{TopicArea}` in paths or links).
+
+2. **Output path:**
+   - With topic-area: `~/Documents/AI\Content extraction\topics\{TopicArea}\{slug}-YYYY-MM-DD\`
+   - Ungrouped: `~/Documents/AI\Content extraction\topics\{slug}-YYYY-MM-DD\`
    - Slug: lowercase, hyphenated, max 50 chars, stopwords stripped (see `CONVENTIONS.md` Rule 3)
    - Date: ISO 8601, today's date
    - If folder already exists (same-day re-run), append `-v2`, `-v3`, etc.
 
-2. **Files written:**
+3. **Files written:**
    - `REPORT.md` — the synthesis (with YAML frontmatter per Step 6 template)
    - `_raw/` subfolder — raw SerpAPI/Serper/Firecrawl JSON responses for reproducibility (preserve untouched per `CONVENTIONS.md` Rule 5)
 
-3. **Append to master INDEX** — final step, mandatory. Add one line to `~/Documents/AI\INDEX.md` under "Topic syntheses":
-   ```
-   - YYYY-MM-DD [topic] [{Target}](Content%20extraction/topics/{slug}-YYYY-MM-DD/) — {one-line description}
-   ```
+4. **Append to master INDEX** — final step, mandatory. Add one line to `~/Documents/AI\INDEX.md` under "Topic syntheses". Path matches the output path resolution above:
+   - With topic-area: `- YYYY-MM-DD [topic] [{Target}](Content%20extraction/topics/{TopicArea}/{slug}-YYYY-MM-DD/) — {one-line description}`
+   - Ungrouped: `- YYYY-MM-DD [topic] [{Target}](Content%20extraction/topics/{slug}-YYYY-MM-DD/) — {one-line description}`
 
-4. **Append to entity catalog** — also add a line to `~/Documents/AI\Content extraction\INDEX.md` under "Topic Syntheses" → new section dated by run.
+5. **Append to entity catalog** — also add a row to `~/Documents/AI\Content extraction\INDEX.md` under the appropriate topic-area's "Topic syntheses" table (or under the "Other topic syntheses (ungrouped)" section if ungrouped). Read the existing rows in the target table and match their column structure exactly — don't invent a new format. The link is relative to `Content extraction/`, so it includes the `topics/{TopicArea}/` prefix when topic-grouped, or just `topics/` when ungrouped:
+   - With topic-area row link: `[{slug}-YYYY-MM-DD](topics/{TopicArea}/{slug}-YYYY-MM-DD/)`
+   - Ungrouped row link: `[{slug}-YYYY-MM-DD](topics/{slug}-YYYY-MM-DD/)`
+   - If the target topic-area has no "Topic syntheses" table yet, add one with a header that matches the style of sibling topic-areas' tables.
 
-5. **Tell the user the exact path saved.** Format: `Saved: <full path>`. If versioning was applied, mention which version.
+6. **Tell the user the exact path saved AND the topic-area resolution.** Two-line format, mandatory on every run:
+   ```
+   TopicArea: <Name or "ungrouped"> (source: arg|inferred|asked)
+   Saved: <full path>
+   ```
+   If versioning was applied, append `(v{N})` to the path. If a new topic-area was created, append `(new topic-area created)`.
 
 **Never overwrite an existing report.** The prior run may be referenced elsewhere.
 
@@ -492,4 +507,4 @@ If a question could go either way (e.g. "best practices for storing API keys"), 
 
 - All API calls go to US-based services (SerpAPI, Serper, Firecrawl). No data leaves to non-US servers.
 - yt-dlp runs locally.
-- Output is saved automatically per Step 7 — see `~/Documents/AI\CONVENTIONS.md` for canonical rules. Default path: `Documents\AI\Content extraction\topics\{slug}-YYYY-MM-DD\`.
+- Output is saved automatically per Step 7 — see `~/Documents/AI\CONVENTIONS.md` for canonical rules (including Rule 11 on topic-area subfolders). Default path: `Documents\AI\Content extraction\topics\{TopicArea}\{slug}-YYYY-MM-DD\` (or `Documents\AI\Content extraction\topics\{slug}-YYYY-MM-DD\` if `ungrouped` — no `{TopicArea}` segment, no double slash).
