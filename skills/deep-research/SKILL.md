@@ -1,6 +1,6 @@
 ---
 name: deep-research
-version: "3.0.2"
+version: "3.0.3"
 description: Deep research on AI news, security advisories, tech articles, and industry topics. Scrapes articles, YouTube transcripts, PDFs, and related sources across the internet, then synthesizes into exposure analysis for the user's tech stack. Invoke with /deep-research followed by pasted article text, URLs, or a topic description.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -292,7 +292,10 @@ Ask the user which format BEFORE generating:
 ---
 target: "[Topic]"
 slug: [slug-form]
+canonical_entity_id: [slug-form]             # NEW v3.0.3: stable across renames. Default = slug on first run.
+topic_area: [TopicArea or null]              # NEW v3.0.3
 type: deep-research
+skill_version: "3.0.3"                       # NEW v3.0.3
 run_date: YYYY-MM-DD
 status: complete
 apis_used: [serpapi, serper, firecrawl, yt-dlp]
@@ -403,7 +406,15 @@ Every run saves to disk. Path resolution per `CONVENTIONS.md`:
    - Ungrouped row link: `[{slug}-security-YYYY-MM-DD](topics/{slug}-security-YYYY-MM-DD/)`
    - If the target topic-area has no "Topic syntheses" table yet, add one with a header that matches the style of sibling topic-areas' tables.
 
-6. **Tell the user the exact path saved AND the topic-area resolution.** Two-line format, mandatory on every run:
+6. **WRITE `recipe.yaml` to the archive root + UPDATE topic-area `MANIFEST.yaml`** (NEW in v3.0.3 — mandatory). See `~/.claude/skills/_research-lib/SCHEMAS.md` for full schemas, identity resolution, `source_key` derivation, and merge-key precedence. Summary:
+   - **Resolve `canonical_entity_id` first** per SCHEMAS.md "Identity resolution procedure": if the archive folder already exists, READ existing recipe.yaml and reuse its `canonical_entity_id` verbatim — never change it on a re-run. Only set it (= slug) on first creation. Renames go to `aliases[]`.
+   - **`recipe.yaml`** in the archive folder with `schema_version: 1`, `skill_version: "3.0.3"`, `skill_name: deep-research`, `generated_at` + `last_updated_at` (UTC ISO-8601), `target` block (with `canonical_entity_id` from above, `topic_area` as string name OR YAML null if ungrouped — NOT the string "ungrouped"), `sources[]` array. Each source MUST have: `source_key` (per SCHEMAS.md rules), `type`, `discovery_method`, `api_used`, `captured_count`, `last_run_at_utc`, `resumable`. **Skill-specific top-level fields allowed**: `exposure` (`confirmed | likely | none | null`) and `cves: []` (list of CVE IDs).
+   - **For every resumable source, write a captured-IDs file in `_raw/`** with stable item IDs (one per line). Counts alone aren't enough.
+   - **`topics/{TopicArea}/MANIFEST.yaml`** (or `topics/MANIFEST.yaml` if topic_area is null). **Merge key precedence**: match by `canonical_entity_id` first, `path` second (legacy fallback). NEVER use `slug` alone. Entry fields: `slug`, `canonical_entity_id`, `path`, `created_at_utc` (first run only), `last_updated_at_utc`, `skill_version_at_creation` (first only), `skill_version_at_last_update`, `has_recipe_yaml: true`, `sources_summary` keyed by `source_key`.
+   - **Use UTC timestamps everywhere** (`date -u +%Y-%m-%dT%H:%M:%SZ` in bash, `datetime.now(timezone.utc).isoformat().replace('+00:00','Z')` in Python). Never local time.
+   - Without this metadata, this security archive cannot be updated incrementally by `/content-update` — only re-created from scratch as a new dated snapshot.
+
+7. **Tell the user the exact path saved AND the topic-area resolution.** Two-line format, mandatory on every run:
    ```
    TopicArea: <Name or "ungrouped"> (source: arg|inferred|asked)
    Saved: <full path>

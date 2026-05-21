@@ -1,6 +1,6 @@
 # research-skills
 
-> Three complementary research skills for Claude Code: general internet research, security-focused exposure analysis, and full corpus extraction. v3.0.2
+> Three complementary research skills for Claude Code: general internet research, security-focused exposure analysis, and full corpus extraction. v3.0.3
 
 Built for solo developers and small teams who want **rigorous, sourced, repeatable** research — not vibes-summarized blog posts. Each skill produces structured artifacts (REPORT.md + raw scrapes + extracts) you can revisit months later.
 
@@ -192,6 +192,7 @@ Forcing all three into one skill makes the prompt too sprawling and the outputs 
 All three skills follow shared conventions documented in `~/Documents/AI/CONVENTIONS.md` (which you'd create on your end):
 
 - **Output paths (v3.0.2+):** `~/Documents/AI/Content extraction/topics/{TopicArea}/{slug}-YYYY-MM-DD/` for `/research`; `~/Documents/AI/Content extraction/topics/{TopicArea}/{slug}-security-YYYY-MM-DD/` for `/deep-research` (the `-security` is appended to the folder name, not the slug itself); `~/Documents/AI/Content extraction/topics/{TopicArea}/{slug}-research-YYYY-MM-DD/` for `/content-research`. Skills resolve `{TopicArea}` per CONVENTIONS.md Rule 11 (caller arg → inferred from target if ≥90% confident → ask once if ambiguous → `ungrouped` falls back to `topics/` root with no `{TopicArea}` segment). Every run prints `TopicArea: X (source: arg|inferred|asked)` so you can verify routing at a glance.
+- **Updateable archives (v3.0.3+):** Every archive auto-generates a `recipe.yaml` describing what was captured + how, and registers itself in a topic-area-level `MANIFEST.yaml`. These power a planned `/content-update` skill (v3.1) that detects deltas and pulls only new content on subsequent runs. See `skills/_research-lib/SCHEMAS.md` for the schemas and CONVENTIONS.md Rule 12 for the corpus-wide contract.
 - **Frontmatter:** YAML at top of every REPORT.md with `target`, `slug`, `type`, `mode`, `run_date`, `status`, `apis_used`, `sources_count`, `gaps`, `tags`
 - **Append to master INDEX:** every run adds a line to `~/Documents/AI/INDEX.md` so you can find old research later
 

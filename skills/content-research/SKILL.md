@@ -1,6 +1,6 @@
 ---
 name: content-research
-version: "3.0.2"
+version: "3.0.3"
 description: Extract EVERYTHING a company, person, or domain has published into an organized local archive. Not a synthesized report — an indexed content dossier with all website pages, YouTube transcripts, podcast audio transcribed via local Whisper (faster-whisper on GPU), press coverage, and social snippets. Use when the user wants a complete "give me everything this target has ever put out" pull, not a research answer. Invoke with /content-research followed by a company name, person name, or URL.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -545,13 +545,16 @@ One row per video, cross-referenced to the `.txt` filename in `transcripts/` or 
 ---
 target: "[Company / Person Name]"
 slug: [slug-form]
+canonical_entity_id: [slug-form]   # NEW v3.0.3: stable across renames. Default = slug on first run. Never change once set.
+topic_area: [TopicArea or null]    # NEW v3.0.3: which topics/{TopicArea}/ this lives in
 type: content-research
+skill_version: "3.0.3"             # NEW v3.0.3: pinned for forward compat with /content-update
 run_date: YYYY-MM-DD
 domains: [primary-domain.com, mirror-or-parent.com]
 status: complete
 file_count: [N]
 total_size_mb: [N]
-apis_used: [firecrawl, yt-dlp, serpapi, serper]
+apis_used: [firecrawl, yt-dlp, serpapi, serper, listen-notes]
 gaps:
   - "[real gap, e.g., 'Crunchbase paywalled']"
 supersedes: null
@@ -608,6 +611,43 @@ After the entity archive's own INDEX.md is written, append one line to EACH of:
 If the topic-area section doesn't exist in the entity catalog yet (e.g., first run for a new topic-area), add it. Don't fall back to a flat "by date" section — that's the old convention.
 
 **This is non-negotiable.** Per `CONVENTIONS.md` Rule 7, an archive that isn't indexed is an orphan and doesn't count as complete.
+
+## Step 6.5: WRITE recipe.yaml + UPDATE MANIFEST.yaml (NEW in v3.0.3 — mandatory)
+
+This step makes the archive **updateable** by a future `/content-update` skill (planned v3.1). Without it, the archive is a snapshot only — no delta detection possible.
+
+See `~/.claude/skills/_research-lib/SCHEMAS.md` for full schemas, identity resolution rules, source_key derivation, and merge-key precedence. Summary:
+
+1. **Resolve `canonical_entity_id` first.** Per SCHEMAS.md "Identity resolution procedure":
+   - If this archive folder already exists on disk, read its existing `recipe.yaml` and REUSE the `target.canonical_entity_id` verbatim. Do not derive a new one.
+   - If no existing archive but the topic-area MANIFEST has an entry with matching `path` or `slug`, reuse its `canonical_entity_id`.
+   - Otherwise (first creation), set `canonical_entity_id` = the current run's slug.
+   - **Never change `canonical_entity_id` on a re-run, even if the user used a different name/slug.** Add to `aliases[]` instead.
+
+2. **Write `recipe.yaml` to the archive root** (alongside INDEX.md). Required structure:
+   - `schema_version: 1`, `skill_version: "3.0.3"`, `skill_name: content-research`
+   - `generated_at`, `last_updated_at` (UTC ISO-8601 `Z` format — see step 5 below)
+   - `target` block: `name`, `slug`, `canonical_entity_id` (from step 1), `topic_area` (string name OR YAML null if ungrouped — do NOT use the string "ungrouped" or empty string)
+   - `sources[]` array — one entry per source captured. Each entry MUST include: `source_key` (derived per SCHEMAS.md rules — e.g., `website_drcloud.com`, `youtube_DrHenryCloud`, `podcast_listen-notes_{id}`), `type`, `discovery_method`, `api_used`, `captured_count`, `last_run_at_utc`, `resumable: true|false`. Optional: `last_seen_*` anchors, `*_file` paths, `interrupted_by`.
+   - `aliases: []`, `snapshot_triggers: []` (placeholders)
+
+3. **For every source with `resumable: true`, write a captured-IDs file in `_raw/`** with **stable item IDs** (one per line):
+   - YouTube: 11-char video IDs → `_raw/yt_captured_ids.txt`
+   - Podcast (Listen Notes): hex episode IDs → `_raw/podcast_captured_episode_ids.txt`
+   - Website: full URLs (strip `?utm_*` tracking params for normalization) → `_raw/{registrable-domain}_captured_urls.txt`
+   - Press / social: full URLs
+   - Counts alone are NOT enough — v3.1 tombstone detection needs to identify which specific items disappeared between runs.
+
+4. **Update `topics/{TopicArea}/MANIFEST.yaml`** (or `topics/MANIFEST.yaml` if topic_area is null). **MANIFEST merge key precedence** (CRITICAL — see SCHEMAS.md):
+   - First, search `archives[]` for entry where `canonical_entity_id` matches. If found, UPDATE that entry.
+   - Otherwise, search for entry where `path` matches (legacy fallback). If found, UPDATE that entry AND populate its `canonical_entity_id` from the recipe.
+   - Otherwise, APPEND a new entry.
+   - **NEVER use `slug` alone as merge key** — slug can change on rename, but `canonical_entity_id` is stable. Matching on slug silently forks identity.
+   - Entry fields: `slug`, `canonical_entity_id`, `path`, `created_at_utc` (only on first append), `last_updated_at_utc`, `skill_version_at_creation` (only on first append), `skill_version_at_last_update`, `has_recipe_yaml: true`, `sources_summary` (compact dict keyed by `source_key`).
+
+5. **Use UTC timestamps everywhere.** Bash: `date -u +%Y-%m-%dT%H:%M:%SZ`. Python: `datetime.now(timezone.utc).isoformat().replace('+00:00', 'Z')`. Never use local time for `*_at_utc` fields — it breaks delta comparisons across timezones.
+
+**Why this is mandatory:** without recipe.yaml + MANIFEST.yaml, the archive can never be updated incrementally — only re-created from scratch as a new dated snapshot. That works but burns API quota and loses provenance. With this metadata, a future `/content-update` can identify deltas (new YouTube videos, new blog posts, new podcast episodes) and pull only those.
 
 ## Step 7: REPORT back to user
 
