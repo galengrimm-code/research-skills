@@ -1,6 +1,6 @@
 ---
 name: content-research
-version: "3.1.0"
+version: "3.2.0"
 description: Extract EVERYTHING a company, person, or domain has published into an organized local archive. Not a synthesized report — an indexed content dossier with all website pages, YouTube transcripts, podcast audio transcribed via local Whisper (faster-whisper on GPU), press coverage, and social snippets. Use when the user wants a complete "give me everything this target has ever put out" pull, not a research answer. Invoke with /content-research followed by a company name, person name, or URL.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -25,7 +25,8 @@ Reuse the deep-research skill's keys — single source of truth.
 
 ```bash
 source ~/.claude/skills/deep-research/.env && echo "Keys: SERPAPI=${SERPAPI_KEY:+OK} SERPER=${SERPER_API_KEY:+OK} FIRECRAWL=${FIRECRAWL_API_KEY:+OK} OPENALEX=${OPENALEX_KEY:+OK} UNPAYWALL=${UNPAYWALL_EMAIL:+OK} GITHUB=${GITHUB_TOKEN:+OK} EXA=${EXA_API_KEY:+OK} LISTEN=${LISTEN_API_KEY:+OK}"
-python -m yt_dlp --version 2>&1 || pip install --user yt-dlp 2>&1 | tail -3
+python -m yt_dlp --version 2>&1 || python -m pip install yt-dlp $([ -z "$VIRTUAL_ENV" ] && echo "--user") 2>&1 | tail -3
+python -c "import youtube_transcript_api" 2>&1 || python -m pip install youtube-transcript-api $([ -z "$VIRTUAL_ENV" ] && echo "--user") 2>&1 | tail -3
 ```
 
 **Graceful degradation:** Wayback Machine CDX needs no auth. OpenAlex and Unpaywall enrich academic discovery when the target has publications, but aren't required. If `OPENALEX_KEY` is empty, skip the author-works lookup and note in the archive's INDEX.md gaps section.
@@ -291,37 +292,67 @@ Then convert each JSON to `{slug}.md` and drop in `01_website/`.
 
 **Pitfall:** Firecrawl blocks Meta (Facebook, Instagram) and LinkedIn. Don't waste credits scraping them directly — use social snippets (Step 6) instead.
 
-### Wave B: YouTube transcripts
+### Wave B: YouTube transcripts (three-tier fallback chain, v3.2.0+)
 
-Dump all channel video URLs to a batch file, then run yt-dlp with `--batch-file`. Background it — often takes 5-15 minutes for a 30-60 video channel.
+Use the shared helper at `~/.claude/skills/_research-lib/yt_transcript_fallback.py` — it handles three tiers automatically per video:
+
+1. **yt-dlp captions** (primary — fastest, battle-tested)
+2. **youtube-transcript-api** (different endpoint — bypasses bot challenges that block yt-dlp)
+3. **Whisper transcription of audio** (last resort — slow but reliable; uses `large-v3-turbo` by default — ~4x faster than `large-v3` (non-turbo) with ~90% of its quality, and markedly more accurate on proper nouns than `medium` despite being slightly slower)
+
+Each video is attempted at each tier in order. First success wins. The helper writes the same `{id}_{title}.txt` filename regardless of which tier produced it, so the downstream channel-index logic is unchanged.
+
+**Bootstrap requirements** (already covered in Step 0 of v3.2.0+):
 
 ```bash
-cd "02_youtube/transcripts" && python -m yt_dlp \
-  --skip-download --write-auto-subs --write-subs \
-  --sub-lang en --sub-format vtt \
-  -o "%(id)s_%(title)s.%(ext)s" --restrict-filenames \
-  --batch-file /tmp/yt_urls.txt > /tmp/yt_log.txt 2>&1 &
+python -m yt_dlp --version 2>&1 || python -m pip install yt-dlp $([ -z "$VIRTUAL_ENV" ] && echo "--user") 2>&1
+python -c "import youtube_transcript_api" 2>&1 || python -m pip install youtube-transcript-api $([ -z "$VIRTUAL_ENV" ] && echo "--user") 2>&1
+# faster-whisper + CUDA wheels are required only if tier 3 is allowed (see content-research Wave C-bis for setup)
 ```
 
-When done, convert VTT → TXT (strip timestamps, dedupe lines):
+**Batch usage from a research run:**
 
 ```python
-import re, glob, os
-for vtt in sorted(glob.glob('*.vtt')):
-    text = open(vtt, encoding='utf-8').read()
-    out, seen = [], set()
-    for l in text.split('\n'):
-        l = l.strip()
-        if not l or l == 'WEBVTT' or l.startswith('Kind:') or l.startswith('Language:') or '-->' in l: continue
-        l = re.sub(r'<[^>]+>', '', l).strip()
-        if not l or l in seen: continue
-        seen.add(l)
-        out.append(l)
-    open(vtt.replace('.en.vtt', '.txt'), 'w', encoding='utf-8').write('\n'.join(out))
-for v in glob.glob('*.vtt'): os.remove(v)
+import sys
+sys.path.insert(0, '/c/Users/galen/.claude/skills/_research-lib')  # path may differ — adapt
+from yt_transcript_fallback import fetch_batch
+
+video_ids = open('_raw/yt_video_ids.txt', encoding='utf-8').read().split()
+results = fetch_batch(
+    video_ids,
+    out_dir='02_youtube/transcripts',
+    whisper_model='large-v3-turbo',  # large-v3-turbo for speed; large-v3 for max quality (slower)
+    allow_whisper=True,              # False for fast runs that accept some missing transcripts
+    sleep_between=2.0,               # rate-limit-friendly default
+    on_progress=lambda i, total, r: print(f'  {i}/{total} {r["status"]} (tier {r["tier"]})') if i % 25 == 0 or r['status'] == 'failed' else None,
+)
+ok = sum(1 for r in results if r['status'] in ('ok', 'skipped'))
+print(f'\nDone: {ok}/{len(results)} transcripts captured')
+print(f'Failed: {len(results) - ok} — see results[].error for per-video details')
 ```
 
-**Expect ~10-20% of videos to have no captions** — shorts, very new uploads, music-heavy content. Note which ones in the channel index.
+**Single-video usage:**
+
+```python
+from yt_transcript_fallback import fetch_transcript
+r = fetch_transcript('VIDEO_ID', out_dir='02_youtube/transcripts', whisper_model='large-v3-turbo')
+# r = {'status': 'ok'|'failed', 'tier': 1|2|3, 'path': '...', 'error': '...'}
+```
+
+**Why the chain matters:** today's session caught YouTube rate-limiting yt-dlp at video 367 of 690. The same session would have continued cleanly via tier 2 (youtube-transcript-api uses a different endpoint and wasn't blocked) for the remaining 323. Verified on a specific failed video: tier 2 returned 417 caption segments where tier 1 returned "Sign in to confirm you're not a bot."
+
+**Expect ~5-15% of videos to still have no captions at any tier** — shorts, very new uploads, music-only content, age-gated videos. Note them in the channel index with `transcript: missing`. If you need transcripts for those, tier 3 (Whisper) will catch them as long as audio is downloadable.
+
+**Background mode for big channels:** wrap the batch call in a background script so it doesn't block the rest of the research run:
+
+```bash
+nohup python -c "
+import sys; sys.path.insert(0, '/c/Users/galen/.claude/skills/_research-lib')
+from yt_transcript_fallback import fetch_batch
+ids = open('_raw/yt_video_ids.txt').read().split()
+fetch_batch(ids, out_dir='02_youtube/transcripts')
+" > _raw/yt_fetch_log.txt 2>&1 &
+```
 
 ### Wave C: Podcast metadata + audio (Listen Notes primary, page-scrape fallback)
 
@@ -439,13 +470,16 @@ AUDIO_DIR = 'audio'
 OUT_DIR = 'transcripts'
 os.makedirs(OUT_DIR, exist_ok=True)
 
-# medium = 769M params, good balance for English podcasts. Use large-v3 for max quality.
+# large-v3-turbo = 809M params, distilled from large-v3. Best speed/quality balance
+# as of 2026. ~4x faster than large-v3 with ~90% of the quality. Use 'large-v3' for
+# absolute max quality on rare proper nouns (worth it for expert/academic interviews);
+# use 'medium' if VRAM is tight (turbo fits in 6GB, medium in 4GB).
 try:
-    model = WhisperModel('medium', device='cuda', compute_type='float16')
-    print('Loaded on CUDA')
+    model = WhisperModel('large-v3-turbo', device='cuda', compute_type='float16')
+    print('Loaded on CUDA (large-v3-turbo)')
 except Exception as e:
     print(f'CUDA failed ({e}), falling back to CPU int8 (~10x slower)')
-    model = WhisperModel('medium', device='cpu', compute_type='int8')
+    model = WhisperModel('large-v3-turbo', device='cpu', compute_type='int8')
 
 total_audio = total_time = total_words = 0
 for mp3 in sorted(glob.glob(os.path.join(AUDIO_DIR, '*.mp3'))):
@@ -464,19 +498,21 @@ for mp3 in sorted(glob.glob(os.path.join(AUDIO_DIR, '*.mp3'))):
 print(f'\nTOTAL: {total_audio/60:.1f} min audio -> {total_time/60:.1f} min wall, {total_words:,} words')
 ```
 
-**Expected performance:**
-- RTX 4060 (8GB VRAM), medium model, float16: **15-23× realtime** — 3 hours of audio in ~10 minutes
+**Expected performance (default model = large-v3-turbo):**
+- RTX 4060 (8GB VRAM), large-v3-turbo, float16: **~12-18× realtime** — 3 hours of audio in ~12-15 minutes
+- For comparison: `medium` is faster (15-23× realtime) but less accurate; `large-v3` is slower (4-6× realtime) but catches more rare names
 - CPU int8 fallback: **1-2× realtime** — 3 hours of audio in ~2-3 hours
 - Kick off with `run_in_background: true`, monitor via output file
 
 **When to transcribe automatically vs. ask:**
-- ≤ 10 episodes, ≤ 5 hours total → just do it, ~10 min on GPU
+- ≤ 10 episodes, ≤ 5 hours total → just do it, ~15 min on GPU at large-v3-turbo
 - 10-30 episodes or > 5 hours → estimate time, mention in response, then do it
 - > 30 episodes → ask the user whether to proceed (could be 30+ min)
 
-**Quality notes:**
-- `medium` handles agricultural/technical jargon well (tested on ROI Biologicals podcast)
-- `large-v3` is ~3× slower but catches rare proper nouns better (worth it for expert interviews)
+**Quality notes (v3.2.0+ defaults to large-v3-turbo):**
+- `large-v3-turbo` handles technical jargon well and catches proper nouns markedly better than `medium`. Default for new runs.
+- `large-v3` (non-turbo) is ~3× slower but the gold standard for rare proper nouns and accented speech — switch when transcribing expert interviews where every name matters.
+- `medium` is a fallback when VRAM is constrained (<6 GB) or speed is paramount over quality.
 - `vad_filter=True` skips silent sections and music intros — critical for clean output
 - Always set `language='en'` if the podcast is English — skips the language detection step and saves time
 
@@ -548,7 +584,7 @@ slug: [slug-form]
 canonical_entity_id: [slug-form]   # NEW v3.0.3: stable across renames. Default = slug on first run. Never change once set.
 topic_area: [TopicArea or null]    # NEW v3.0.3: which topics/{TopicArea}/ this lives in
 type: content-research
-skill_version: "3.1.0"             # NEW v3.0.3: pinned for forward compat with /content-update
+skill_version: "3.2.0"             # NEW v3.0.3: pinned for forward compat with /content-update
 run_date: YYYY-MM-DD
 domains: [primary-domain.com, mirror-or-parent.com]
 status: complete
@@ -625,7 +661,7 @@ See `~/.claude/skills/_research-lib/SCHEMAS.md` for full schemas, identity resol
    - **Never change `canonical_entity_id` on a re-run, even if the user used a different name/slug.** Add to `aliases[]` instead.
 
 2. **Write `recipe.yaml` to the archive root** (alongside INDEX.md). Required structure:
-   - `schema_version: 1`, `skill_version: "3.1.0"`, `skill_name: content-research`
+   - `schema_version: 1`, `skill_version: "3.2.0"`, `skill_name: content-research`
    - `generated_at`, `last_updated_at` (UTC ISO-8601 `Z` format — see step 5 below)
    - `target` block: `name`, `slug`, `canonical_entity_id` (from step 1), `topic_area` (string name OR YAML null if ungrouped — do NOT use the string "ungrouped" or empty string)
    - `sources[]` array — one entry per source captured. Each entry MUST include: `source_key` (derived per SCHEMAS.md rules — e.g., `website_drcloud.com`, `youtube_DrHenryCloud`, `podcast_listen-notes_{id}`), `type`, `discovery_method`, `api_used`, `captured_count`, `last_run_at_utc`, `resumable: true|false`. Optional: `last_seen_*` anchors, `*_file` paths, `interrupted_by`.

@@ -1,6 +1,6 @@
 # research-skills
 
-> Four complementary research skills for Claude Code: general internet research, security-focused exposure analysis, full corpus extraction, and append-only delta updates of existing archives. v3.1.0
+> Four complementary research skills for Claude Code: general internet research, security-focused exposure analysis, full corpus extraction, and append-only delta updates of existing archives. v3.2.0 — adds shared YouTube transcript fallback chain (yt-dlp → youtube-transcript-api → Whisper) so a single YouTube rate-limit doesn't kill a research run. Default Whisper model upgraded to `large-v3-turbo`.
 
 Built for solo developers and small teams who want **rigorous, sourced, repeatable** research — not vibes-summarized blog posts. Each skill produces structured artifacts (REPORT.md + raw scrapes + extracts) you can revisit months later.
 

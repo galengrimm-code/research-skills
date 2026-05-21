@@ -1,6 +1,6 @@
 ---
 name: deep-research
-version: "3.1.0"
+version: "3.2.0"
 description: Deep research on AI news, security advisories, tech articles, and industry topics. Scrapes articles, YouTube transcripts, PDFs, and related sources across the internet, then synthesizes into exposure analysis for the user's tech stack. Invoke with /deep-research followed by pasted article text, URLs, or a topic description.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -16,7 +16,10 @@ Export API keys from `.env` file and verify yt-dlp. Run this block first, every 
 ```bash
 source ~/.claude/skills/deep-research/.env && echo "Keys: SERPAPI=${SERPAPI_KEY:+OK} SERPER=${SERPER_API_KEY:+OK} FIRECRAWL=${FIRECRAWL_API_KEY:+OK} EXA=${EXA_API_KEY:+OK} GITHUB=${GITHUB_TOKEN:+OK} LISTEN=${LISTEN_API_KEY:+OK}"
 python -m yt_dlp --version
+python -c "import youtube_transcript_api" 2>&1 || python -m pip install youtube-transcript-api $([ -z "$VIRTUAL_ENV" ] && echo "--user") 2>&1 | tail -3
 ```
+
+**YouTube transcript fetching (v3.2.0+):** when this skill processes a YouTube URL, use the shared helper at `~/.claude/skills/_research-lib/yt_transcript_fallback.py`. It runs a three-tier chain per video (yt-dlp → youtube-transcript-api → Whisper on audio) so a single YouTube rate-limit doesn't kill the whole research run. See `content-research/SKILL.md` Wave B for usage examples. Default Whisper model is `large-v3-turbo`.
 
 **API roles in `/deep-research`:**
 - **SerpAPI / Serper / Firecrawl** — primary web discovery and scraping (always-on)
@@ -295,7 +298,7 @@ slug: [slug-form]
 canonical_entity_id: [slug-form]             # NEW v3.0.3: stable across renames. Default = slug on first run.
 topic_area: [TopicArea or null]              # NEW v3.0.3
 type: deep-research
-skill_version: "3.1.0"                       # NEW v3.0.3
+skill_version: "3.2.0"                       # NEW v3.0.3
 run_date: YYYY-MM-DD
 status: complete
 apis_used: [serpapi, serper, firecrawl, yt-dlp]
@@ -408,7 +411,7 @@ Every run saves to disk. Path resolution per `CONVENTIONS.md`:
 
 6. **WRITE `recipe.yaml` to the archive root + UPDATE topic-area `MANIFEST.yaml`** (NEW in v3.0.3 — mandatory). See `~/.claude/skills/_research-lib/SCHEMAS.md` for full schemas, identity resolution, `source_key` derivation, and merge-key precedence. Summary:
    - **Resolve `canonical_entity_id` first** per SCHEMAS.md "Identity resolution procedure": if the archive folder already exists, READ existing recipe.yaml and reuse its `canonical_entity_id` verbatim — never change it on a re-run. Only set it (= slug) on first creation. Renames go to `aliases[]`.
-   - **`recipe.yaml`** in the archive folder with `schema_version: 1`, `skill_version: "3.1.0"`, `skill_name: deep-research`, `generated_at` + `last_updated_at` (UTC ISO-8601), `target` block (with `canonical_entity_id` from above, `topic_area` as string name OR YAML null if ungrouped — NOT the string "ungrouped"), `sources[]` array. Each source MUST have: `source_key` (per SCHEMAS.md rules), `type`, `discovery_method`, `api_used`, `captured_count`, `last_run_at_utc`, `resumable`. **Skill-specific top-level fields allowed**: `exposure` (`confirmed | likely | none | null`) and `cves: []` (list of CVE IDs).
+   - **`recipe.yaml`** in the archive folder with `schema_version: 1`, `skill_version: "3.2.0"`, `skill_name: deep-research`, `generated_at` + `last_updated_at` (UTC ISO-8601), `target` block (with `canonical_entity_id` from above, `topic_area` as string name OR YAML null if ungrouped — NOT the string "ungrouped"), `sources[]` array. Each source MUST have: `source_key` (per SCHEMAS.md rules), `type`, `discovery_method`, `api_used`, `captured_count`, `last_run_at_utc`, `resumable`. **Skill-specific top-level fields allowed**: `exposure` (`confirmed | likely | none | null`) and `cves: []` (list of CVE IDs).
    - **For every resumable source, write a captured-IDs file in `_raw/`** with stable item IDs (one per line). Counts alone aren't enough.
    - **`topics/{TopicArea}/MANIFEST.yaml`** (or `topics/MANIFEST.yaml` if topic_area is null). **Merge key precedence**: match by `canonical_entity_id` first, `path` second (legacy fallback). NEVER use `slug` alone. Entry fields: `slug`, `canonical_entity_id`, `path`, `created_at_utc` (first run only), `last_updated_at_utc`, `skill_version_at_creation` (first only), `skill_version_at_last_update`, `has_recipe_yaml: true`, `sources_summary` keyed by `source_key`.
    - **Use UTC timestamps everywhere** (`date -u +%Y-%m-%dT%H:%M:%SZ` in bash, `datetime.now(timezone.utc).isoformat().replace('+00:00','Z')` in Python). Never local time.

@@ -1,6 +1,6 @@
 ---
 name: content-update
-version: "1.0.0"
+version: "1.1.0"
 description: Detect new content for an existing entity archive (or all archives in a topic-area) and append-only update without re-fetching what's already captured. Reads recipe.yaml + MANIFEST.yaml written by /research, /deep-research, and /content-research (v3.0.3+). Use when you want to refresh an existing archive's coverage of a target — new YouTube videos, new blog posts, new podcast episodes — without burning API quota on what you already have. Invoke with `/content-update <path-to-archive>` or `/content-update --topic-area=<Name>`. Trigger phrases: "update X", "refresh X", "pull new content for X".
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -25,10 +25,13 @@ Reuse the deep-research skill's API keys.
 
 ```bash
 source ~/.claude/skills/deep-research/.env && echo "Keys: SERPAPI=${SERPAPI_KEY:+OK} SERPER=${SERPER_API_KEY:+OK} FIRECRAWL=${FIRECRAWL_API_KEY:+OK} OPENALEX=${OPENALEX_KEY:+OK} UNPAYWALL=${UNPAYWALL_EMAIL:+OK} GITHUB=${GITHUB_TOKEN:+OK} EXA=${EXA_API_KEY:+OK} LISTEN=${LISTEN_API_KEY:+OK}"
-python -m yt_dlp --version 2>&1 || pip install --user yt-dlp 2>&1 | tail -3
+python -m yt_dlp --version 2>&1 || python -m pip install yt-dlp $([ -z "$VIRTUAL_ENV" ] && echo "--user") 2>&1 | tail -3
+python -c "import youtube_transcript_api" 2>&1 || python -m pip install youtube-transcript-api $([ -z "$VIRTUAL_ENV" ] && echo "--user") 2>&1 | tail -3
 ```
 
 **Schema reference:** all schema details live at `~/.claude/skills/_research-lib/SCHEMAS.md`. Read it if anything below is ambiguous.
+
+**YouTube transcript fetching (v1.1.0+):** when this skill fetches deltas for a youtube_channel source, use the shared helper at `~/.claude/skills/_research-lib/yt_transcript_fallback.py` for the actual transcript retrieval (Step 4). It runs a three-tier chain per video (yt-dlp → youtube-transcript-api → Whisper) so a single YouTube rate-limit doesn't abandon the delta-fetch mid-run. Default Whisper model: `large-v3-turbo`.
 
 ---
 
@@ -91,7 +94,7 @@ python -m yt_dlp --flat-playlist --print "%(id)s" \
 
 Read current IDs into a set. Read captured IDs from `_raw/yt_captured_ids.txt`. If that file doesn't exist, this source was not properly materialized at backfill time — skip per Step 2 policy; do NOT attempt to derive captured IDs from filenames at runtime. `new_ids = current - captured`.
 
-**If yt-dlp returns "Sign in to confirm you're not a bot":** advise the user to retry with `--cookies-from-browser chrome` (Chrome must be closed) and log this source as `interrupted_by: youtube-bot-challenge` in the updated recipe. Move on to other sources.
+**Fetching the new transcripts** (Step 4) uses `~/.claude/skills/_research-lib/yt_transcript_fallback.py` (`fetch_batch(new_ids, out_dir='02_youtube/transcripts')`) — the three-tier chain (yt-dlp → youtube-transcript-api → Whisper) handles bot challenges automatically by trying tier 2 when tier 1 fails. If yt-dlp at tier 1 hits "Sign in to confirm you're not a bot" on ALL videos AND tier 2 also fails consistently (rare), log this source as `interrupted_by: youtube-bot-challenge-all-tiers` in the updated recipe and move on. Per-video tier outcomes are returned in `results[].tier` for the update history log.
 
 ### website (sitemap)
 
