@@ -1,6 +1,6 @@
 # research-skills
 
-> Three complementary research skills for Claude Code: general internet research, security-focused exposure analysis, and full corpus extraction. v3.0.3
+> Four complementary research skills for Claude Code: general internet research, security-focused exposure analysis, full corpus extraction, and append-only delta updates of existing archives. v3.1.0
 
 Built for solo developers and small teams who want **rigorous, sourced, repeatable** research — not vibes-summarized blog posts. Each skill produces structured artifacts (REPORT.md + raw scrapes + extracts) you can revisit months later.
 

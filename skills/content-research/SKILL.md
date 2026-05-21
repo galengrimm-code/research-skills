@@ -1,6 +1,6 @@
 ---
 name: content-research
-version: "3.0.3"
+version: "3.1.0"
 description: Extract EVERYTHING a company, person, or domain has published into an organized local archive. Not a synthesized report — an indexed content dossier with all website pages, YouTube transcripts, podcast audio transcribed via local Whisper (faster-whisper on GPU), press coverage, and social snippets. Use when the user wants a complete "give me everything this target has ever put out" pull, not a research answer. Invoke with /content-research followed by a company name, person name, or URL.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -548,7 +548,7 @@ slug: [slug-form]
 canonical_entity_id: [slug-form]   # NEW v3.0.3: stable across renames. Default = slug on first run. Never change once set.
 topic_area: [TopicArea or null]    # NEW v3.0.3: which topics/{TopicArea}/ this lives in
 type: content-research
-skill_version: "3.0.3"             # NEW v3.0.3: pinned for forward compat with /content-update
+skill_version: "3.1.0"             # NEW v3.0.3: pinned for forward compat with /content-update
 run_date: YYYY-MM-DD
 domains: [primary-domain.com, mirror-or-parent.com]
 status: complete
@@ -625,7 +625,7 @@ See `~/.claude/skills/_research-lib/SCHEMAS.md` for full schemas, identity resol
    - **Never change `canonical_entity_id` on a re-run, even if the user used a different name/slug.** Add to `aliases[]` instead.
 
 2. **Write `recipe.yaml` to the archive root** (alongside INDEX.md). Required structure:
-   - `schema_version: 1`, `skill_version: "3.0.3"`, `skill_name: content-research`
+   - `schema_version: 1`, `skill_version: "3.1.0"`, `skill_name: content-research`
    - `generated_at`, `last_updated_at` (UTC ISO-8601 `Z` format — see step 5 below)
    - `target` block: `name`, `slug`, `canonical_entity_id` (from step 1), `topic_area` (string name OR YAML null if ungrouped — do NOT use the string "ungrouped" or empty string)
    - `sources[]` array — one entry per source captured. Each entry MUST include: `source_key` (derived per SCHEMAS.md rules — e.g., `website_drcloud.com`, `youtube_DrHenryCloud`, `podcast_listen-notes_{id}`), `type`, `discovery_method`, `api_used`, `captured_count`, `last_run_at_utc`, `resumable: true|false`. Optional: `last_seen_*` anchors, `*_file` paths, `interrupted_by`.

@@ -1,6 +1,6 @@
 ---
 name: research
-version: "3.0.3"
+version: "3.1.0"
 description: General-purpose internet research on any topic — how-to guides, comparisons, explainers, landscape surveys, product research. Scrapes articles, YouTube transcripts, PDFs, and related sources, then synthesizes into a question-type-aware report. Invoke with /research followed by pasted text, URLs, or a topic. For security/vulnerability research with stack-exposure mapping, use /deep-research instead.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -380,7 +380,7 @@ slug: [slug-form-of-topic]
 canonical_entity_id: [slug-form-of-topic]   # NEW v3.0.3: stable across renames. Default = slug on first run.
 topic_area: [TopicArea or null]              # NEW v3.0.3
 type: research
-skill_version: "3.0.3"                       # NEW v3.0.3
+skill_version: "3.1.0"                       # NEW v3.0.3
 mode: [how-to | comparison | explainer | landscape]
 run_date: YYYY-MM-DD
 status: complete
@@ -444,7 +444,7 @@ Every run saves to disk. Path resolution per `CONVENTIONS.md`:
 
 6. **WRITE `recipe.yaml` to the archive root + UPDATE topic-area `MANIFEST.yaml`** (NEW in v3.0.3 — mandatory). See `~/.claude/skills/_research-lib/SCHEMAS.md` for full schemas, identity resolution, `source_key` derivation, and merge-key precedence. Summary:
    - **Resolve `canonical_entity_id` first** per SCHEMAS.md "Identity resolution procedure": if the archive folder already exists, READ existing recipe.yaml and reuse its `canonical_entity_id` verbatim — never change it on a re-run. Only set it (= slug) on first creation. Renames go to `aliases[]`, not to `canonical_entity_id`.
-   - **`recipe.yaml`** in the archive folder with `schema_version: 1`, `skill_version: "3.0.3"`, `skill_name: research`, `generated_at` + `last_updated_at` (UTC ISO-8601), `target` block (with `canonical_entity_id` from above, `topic_area` as string name OR YAML null if ungrouped — NOT the string "ungrouped"), `sources[]` array. Each source MUST have: `source_key` (per SCHEMAS.md rules — e.g., `website_{domain}`, `youtube_{handle}`, `podcast_listen-notes_{id}`), `type`, `discovery_method`, `api_used`, `captured_count`, `last_run_at_utc`, `resumable`. **Skill-specific top-level fields allowed**: `mode` (the research mode classified in Step 1).
+   - **`recipe.yaml`** in the archive folder with `schema_version: 1`, `skill_version: "3.1.0"`, `skill_name: research`, `generated_at` + `last_updated_at` (UTC ISO-8601), `target` block (with `canonical_entity_id` from above, `topic_area` as string name OR YAML null if ungrouped — NOT the string "ungrouped"), `sources[]` array. Each source MUST have: `source_key` (per SCHEMAS.md rules — e.g., `website_{domain}`, `youtube_{handle}`, `podcast_listen-notes_{id}`), `type`, `discovery_method`, `api_used`, `captured_count`, `last_run_at_utc`, `resumable`. **Skill-specific top-level fields allowed**: `mode` (the research mode classified in Step 1).
    - **For every resumable source, write a captured-IDs file in `_raw/`** with stable item IDs (one per line). Counts alone aren't enough — v3.1 tombstone detection needs stable IDs.
    - **`topics/{TopicArea}/MANIFEST.yaml`** (or `topics/MANIFEST.yaml` if topic_area is null). **Merge key precedence**: match by `canonical_entity_id` first, `path` second (legacy fallback). NEVER use `slug` alone — slug can change on rename. Entry fields: `slug`, `canonical_entity_id`, `path`, `created_at_utc` (first run only), `last_updated_at_utc`, `skill_version_at_creation` (first only), `skill_version_at_last_update`, `has_recipe_yaml: true`, `sources_summary` keyed by `source_key`.
    - **Use UTC timestamps everywhere** (`date -u +%Y-%m-%dT%H:%M:%SZ` in bash, `datetime.now(timezone.utc).isoformat().replace('+00:00','Z')` in Python). Never local time.
