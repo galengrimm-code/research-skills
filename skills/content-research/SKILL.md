@@ -313,8 +313,8 @@ python -c "import youtube_transcript_api" 2>&1 || python -m pip install youtube-
 **Batch usage from a research run:**
 
 ```python
-import sys
-sys.path.insert(0, '/c/Users/galen/.claude/skills/_research-lib')  # path may differ — adapt
+import sys, os
+sys.path.insert(0, os.path.expanduser('~/.claude/skills/_research-lib'))  # portable: works on Win/Mac/Linux. The POSIX-form '/c/Users/...' DOES NOT work because Python on Windows reads paths literally.
 from yt_transcript_fallback import fetch_batch
 
 video_ids = open('_raw/yt_video_ids.txt', encoding='utf-8').read().split()
@@ -347,7 +347,7 @@ r = fetch_transcript('VIDEO_ID', out_dir='02_youtube/transcripts', whisper_model
 
 ```bash
 nohup python -c "
-import sys; sys.path.insert(0, '/c/Users/galen/.claude/skills/_research-lib')
+import sys, os; sys.path.insert(0, os.path.expanduser('~/.claude/skills/_research-lib'))
 from yt_transcript_fallback import fetch_batch
 ids = open('_raw/yt_video_ids.txt').read().split()
 fetch_batch(ids, out_dir='02_youtube/transcripts')
