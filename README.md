@@ -1,6 +1,6 @@
 # research-skills
 
-> Four complementary research skills for Claude Code: general internet research, security-focused exposure analysis, full corpus extraction, and append-only delta updates of existing archives. v3.3.0 — adds a **Pulse / Recency** mode to `/research`: community sentiment from Hacker News (and Reddit via search) over a recent window, synthesized for cross-platform convergence. v3.2.0 added a shared YouTube transcript fallback chain (yt-dlp → youtube-transcript-api → Whisper) so a single YouTube rate-limit doesn't kill a research run; default Whisper model `large-v3-turbo`.
+> Four complementary research skills for Claude Code: general internet research, security-focused exposure analysis, full corpus extraction, and append-only delta updates of existing archives. v3.3.0 — adds a **Pulse / Recency** mode to `/research` (community sentiment over a recent window) and pulls **Hacker News** into both `/research` and `/deep-research` (real-time security discourse for exposure analysis). Reddit now uses the **OAuth API** — its public `*.json` is blocked to programmatic requests, so set `REDDIT_CLIENT_ID`/`SECRET` (falls back to `site:reddit.com` search otherwise). v3.2.0 added a shared YouTube transcript fallback chain (yt-dlp → youtube-transcript-api → Whisper); default Whisper model `large-v3-turbo`.
 
 Built for solo developers and small teams who want **rigorous, sourced, repeatable** research — not vibes-summarized blog posts. Each skill produces structured artifacts (REPORT.md + raw scrapes + extracts) you can revisit months later.
 

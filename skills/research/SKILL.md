@@ -14,7 +14,7 @@ General-purpose internet research. Same plumbing as `/deep-research` (SerpAPI, S
 Reuse the deep-research skill's API keys. One source of truth — no duplicate `.env`.
 
 ```bash
-source ~/.claude/skills/deep-research/.env && echo "Keys: SERPAPI=${SERPAPI_KEY:+OK} SERPER=${SERPER_API_KEY:+OK} FIRECRAWL=${FIRECRAWL_API_KEY:+OK} OPENALEX=${OPENALEX_KEY:+OK} UNPAYWALL=${UNPAYWALL_EMAIL:+OK} EXA=${EXA_API_KEY:+OK} GITHUB=${GITHUB_TOKEN:+OK} LISTEN=${LISTEN_API_KEY:+OK}"
+source ~/.claude/skills/deep-research/.env && echo "Keys: SERPAPI=${SERPAPI_KEY:+OK} SERPER=${SERPER_API_KEY:+OK} FIRECRAWL=${FIRECRAWL_API_KEY:+OK} OPENALEX=${OPENALEX_KEY:+OK} UNPAYWALL=${UNPAYWALL_EMAIL:+OK} EXA=${EXA_API_KEY:+OK} GITHUB=${GITHUB_TOKEN:+OK} LISTEN=${LISTEN_API_KEY:+OK} REDDIT=${REDDIT_CLIENT_ID:+OK}"
 python -m yt_dlp --version
 python -c "import youtube_transcript_api" 2>&1 || python -m pip install youtube-transcript-api $([ -z "$VIRTUAL_ENV" ] && echo "--user") 2>&1 | tail -3
 ```
@@ -252,14 +252,29 @@ curl -s "https://hn.algolia.com/api/v1/search?query=QUERY&tags=comment&numericFi
 ```
 Extract per hit: title, url, points, num_comments, author, created_at, objectID. HN skews technical/builder — note that lens when you synthesize.
 
-**Reddit (via search API — direct JSON is now blocked).** As of mid-2026, Reddit's public `*.json` endpoints return HTTP 403 to datacenter and most programmatic requests — verified: curl and WebFetch both blocked, on `www`, `old`, and subreddit-scoped paths alike. Do NOT rely on them. Surface Reddit threads through the search APIs you already have instead:
+**Reddit (OAuth — public JSON is blocked).** Reddit's public `*.json` endpoints return HTTP 403 to datacenter/programmatic requests regardless of User-Agent (verified: curl and WebFetch, on `www`, `old`, and subreddit-scoped paths alike). The authenticated API works, though. If `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` are set, get a userless token and query `oauth.reddit.com`:
 
 ```bash
-# Discovery via SerpAPI (or Serper) — these index Reddit and return titles + snippets:
-curl -s "https://serpapi.com/search.json?q=site:reddit.com+QUERY&api_key=$SERPAPI_KEY&num=15"
-# For Pulse mode, bias recent by appending the current year or "this month" to QUERY.
+# 1. Fetch a read-only (client-credentials) token — fetch fresh per run:
+TOKEN=$(curl -s -X POST "https://www.reddit.com/api/v1/access_token" \
+  -u "$REDDIT_CLIENT_ID:$REDDIT_CLIENT_SECRET" \
+  -A "research-skills/3.3 (Claude Code)" \
+  -d "grant_type=client_credentials" | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+
+# 2. Query oauth.reddit.com (mirrors the public paths; the UA header is mandatory).
+#    t = hour|day|week|month|year|all — set from the resolved window in Pulse mode.
+curl -s -H "Authorization: bearer $TOKEN" -A "research-skills/3.3 (Claude Code)" \
+  "https://oauth.reddit.com/search?q=QUERY&sort=top&t=month&limit=25&type=link"
+
+# 3. For the top 3-5 threads by score, pull comments (the gold is in the comments):
+curl -s -H "Authorization: bearer $TOKEN" -A "research-skills/3.3 (Claude Code)" \
+  "https://oauth.reddit.com/r/SUBREDDIT/comments/POST_ID?sort=top&limit=10"
 ```
-The search snippets (thread title + top-comment preview) usually carry enough sentiment to synthesize. If you need full thread bodies and have Reddit OAuth credentials configured, use the authenticated `oauth.reddit.com` API; otherwise note in the report's "gaps" field that Reddit depth was snippet-only. If HN returns nothing, broaden the query or drop the timestamp to check whether the topic is simply older than the window.
+Extract per post: title, subreddit, score, num_comments, created_utc, permalink. From comment threads: recurring complaints, praise, and unanswered questions.
+
+**Fallback if the creds aren't set:** surface Reddit threads through SerpAPI/Serper (`site:reddit.com QUERY`) and use the snippets — note in the report's "gaps" field that Reddit was snippet-only. To enable the full path: create a **script** app at https://www.reddit.com/prefs/apps, then add `REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET` to `~/.claude/skills/deep-research/.env`.
+
+If HN returns nothing, broaden the query or drop the timestamp to check whether the topic is simply older than the window.
 
 **Out of scope (deliberate):** X/Twitter sentiment is NOT fetched here. Pulling it means driving Grok through a browser, which this skill's tool set (`Bash, WebSearch, WebFetch, Agent`) doesn't include. Web search already surfaces news/analysis; Reddit + HN cover the community signal. If X sentiment is ever genuinely needed, run it separately in a browser-capable context.
 
