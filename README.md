@@ -1,6 +1,6 @@
 # research-skills
 
-> Four complementary research skills for Claude Code: general internet research, security-focused exposure analysis, full corpus extraction, and append-only delta updates of existing archives. v3.2.0 — adds shared YouTube transcript fallback chain (yt-dlp → youtube-transcript-api → Whisper) so a single YouTube rate-limit doesn't kill a research run. Default Whisper model upgraded to `large-v3-turbo`.
+> Four complementary research skills for Claude Code: general internet research, security-focused exposure analysis, full corpus extraction, and append-only delta updates of existing archives. v3.3.0 — adds a **Pulse / Recency** mode to `/research`: community sentiment from Hacker News (and Reddit via search) over a recent window, synthesized for cross-platform convergence. v3.2.0 added a shared YouTube transcript fallback chain (yt-dlp → youtube-transcript-api → Whisper) so a single YouTube rate-limit doesn't kill a research run; default Whisper model `large-v3-turbo`.
 
 Built for solo developers and small teams who want **rigorous, sourced, repeatable** research — not vibes-summarized blog posts. Each skill produces structured artifacts (REPORT.md + raw scrapes + extracts) you can revisit months later.
 
@@ -10,7 +10,7 @@ Built for solo developers and small teams who want **rigorous, sourced, repeatab
 
 | Skill | When to use | Output |
 |---|---|---|
-| **`/research`** | "How does X work?" / "Compare Y vs Z" / "What's the landscape of Q?" — synthesized answer to a question | Dated topic-synthesis folder with `REPORT.md` + `_raw/` + `_extracts.md` |
+| **`/research`** | "How does X work?" / "Compare Y vs Z" / "What's the landscape of Q?" / "What are people saying about Z lately?" — synthesized answer to a question | Dated topic-synthesis folder with `REPORT.md` + `_raw/` + `_extracts.md` |
 | **`/deep-research`** | Security advisories, CVE exposure, supply-chain risk, "should I worry about X?" — synthesizes against YOUR stack | Same shape as `/research`, but with `-security` suffix and exposure mapping |
 | **`/content-research`** | "Get me everything X has published" — competitive intel, expert dossier, podcast/YouTube/site archaeology | Entity archive folder with subfolders per source type (website, YouTube, podcast, press, social) |
 

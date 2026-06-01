@@ -1,7 +1,7 @@
 ---
 name: research
-version: "3.2.0"
-description: General-purpose internet research on any topic — how-to guides, comparisons, explainers, landscape surveys, product research. Scrapes articles, YouTube transcripts, PDFs, and related sources, then synthesizes into a question-type-aware report. Invoke with /research followed by pasted text, URLs, or a topic. For security/vulnerability research with stack-exposure mapping, use /deep-research instead.
+version: "3.3.0"
+description: General-purpose internet research on any topic — how-to guides, comparisons, explainers, landscape surveys, recent community sentiment (what people are saying lately on Reddit/Hacker News), product research. Scrapes articles, YouTube transcripts, PDFs, and community discussion, then synthesizes into a question-type-aware report. Invoke with /research followed by pasted text, URLs, or a topic. For security/vulnerability research with stack-exposure mapping, use /deep-research instead.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
 
@@ -58,7 +58,7 @@ cat ~/.claude/skills/_research-lib/clarify-template.md
 
 Apply the **full gate** (5 dimensions) for `/research`:
 - Topic specificity
-- Mode (How-to / Comparison / Explainer / Landscape)
+- Mode (How-to / Comparison / Explainer / Landscape / Pulse)
 - Audience (self / specific client / general reference)
 - Deliverable (decision support / implementation prep / meeting prep / reference)
 - Lens (the angle to emphasize)
@@ -76,7 +76,7 @@ After the gate (or when skipped), write `_context.md` to the output folder per t
 
 ## Step 1: CLASSIFY the question
 
-Before searching, identify which of these four research modes the user is in. The mode shapes everything downstream:
+Before searching, identify which of these five research modes the user is in. The mode shapes everything downstream:
 
 | Mode | Trigger phrases | Output style |
 |------|-----------------|--------------|
@@ -84,8 +84,11 @@ Before searching, identify which of these four research modes the user is in. Th
 | **Comparison** | "vs", "compare", "best X for Y", "which should I use", "alternatives to" | Matrix of options, scoring, recommendation |
 | **Explainer** | "what is", "why does", "how does X work", "explain" | Background, mechanics, analogies, why it matters |
 | **Landscape / Survey** | "state of", "current approaches to", "what's happening in", "trends" | Taxonomy of the space, who's doing what, open questions |
+| **Pulse / Recency** | "what are people saying about", "lately", "recently", "last 30 days", "is X still worth it", "buzz around", "current sentiment" | Cross-platform sentiment synthesis over a recent window — consensus, controversy, pain points, excitement |
 
 If ambiguous, pick the best fit and note it in output. If truly unclear, ask the user once.
+
+**Pulse mode and the recency window.** Pulse is the ONLY mode that constrains by time. The other four apply no date filter — don't fence them in. Pulse activates only when the wording signals recency (the triggers above). When it does, resolve the window from the user's phrasing: "last week" → 7 days, "last few months" → 90 days, "this year" → year-to-date, an explicit "last N days" → N. Default to **30 days** only when recency is signaled but no span is named. Never apply a window to a non-Pulse run.
 
 ## Step 2: EXTRACT
 
@@ -105,6 +108,7 @@ Use BOTH search APIs in parallel. Tailor search terms to the classified mode:
 | Comparison | Add "vs", "review", "pros cons", "compared", benchmark queries |
 | Explainer | Add "explained", "introduction", "fundamentals", also look for canonical primary sources |
 | Landscape | Add "state of", "survey", "2026 landscape", also hit industry analyst sites |
+| Pulse | Recency-weighted: add the current year + "review"/"worth it"/"problems", and lead with the community sources below (Reddit + Hacker News) over evergreen docs |
 
 **SerpAPI** (broader, supports YouTube):
 ```bash
@@ -235,9 +239,33 @@ Parse for: `results[].title_original`, `results[].audio` (URL — for Whisper fa
 
 **When snippets aren't enough:** download audio via Python urllib (bash curl-in-loops fails on Windows), run faster-whisper locally (~18x realtime on modern GPU). Full pattern documented in `/content-research`.
 
-Source bias for general research: favor primary sources, canonical documentation, authoritative practitioners, recent high-quality blog posts. Deprioritize SEO spam, listicles, AI-generated summary sites. When you see a source cited repeatedly across other sources, that's a signal to fetch the original.
+**Hacker News + Reddit** — community sentiment. Use for Pulse mode, and optionally for Landscape/Comparison when "what do real users actually think" matters. These are the community-discussion sources the rest of the stack misses.
 
-Deduplicate URLs across all four sources (SerpAPI / Serper / OpenAlex / Listen Notes).
+**Hacker News (primary — open API, verified working).** Algolia search is public JSON, no key. In Pulse mode, filter to the resolved window:
+
+```bash
+# stories + comments since (now - window). TIMESTAMP = Unix epoch:
+#   bash:   date -d '30 days ago' +%s
+#   python: int((datetime.now() - timedelta(days=30)).timestamp())
+curl -s "https://hn.algolia.com/api/v1/search?query=QUERY&tags=story&numericFilters=created_at_i>TIMESTAMP&hitsPerPage=20"
+curl -s "https://hn.algolia.com/api/v1/search?query=QUERY&tags=comment&numericFilters=created_at_i>TIMESTAMP&hitsPerPage=15"
+```
+Extract per hit: title, url, points, num_comments, author, created_at, objectID. HN skews technical/builder — note that lens when you synthesize.
+
+**Reddit (via search API — direct JSON is now blocked).** As of mid-2026, Reddit's public `*.json` endpoints return HTTP 403 to datacenter and most programmatic requests — verified: curl and WebFetch both blocked, on `www`, `old`, and subreddit-scoped paths alike. Do NOT rely on them. Surface Reddit threads through the search APIs you already have instead:
+
+```bash
+# Discovery via SerpAPI (or Serper) — these index Reddit and return titles + snippets:
+curl -s "https://serpapi.com/search.json?q=site:reddit.com+QUERY&api_key=$SERPAPI_KEY&num=15"
+# For Pulse mode, bias recent by appending the current year or "this month" to QUERY.
+```
+The search snippets (thread title + top-comment preview) usually carry enough sentiment to synthesize. If you need full thread bodies and have Reddit OAuth credentials configured, use the authenticated `oauth.reddit.com` API; otherwise note in the report's "gaps" field that Reddit depth was snippet-only. If HN returns nothing, broaden the query or drop the timestamp to check whether the topic is simply older than the window.
+
+**Out of scope (deliberate):** X/Twitter sentiment is NOT fetched here. Pulling it means driving Grok through a browser, which this skill's tool set (`Bash, WebSearch, WebFetch, Agent`) doesn't include. Web search already surfaces news/analysis; Reddit + HN cover the community signal. If X sentiment is ever genuinely needed, run it separately in a browser-capable context.
+
+Source bias for general research: favor primary sources, canonical documentation, authoritative practitioners, recent high-quality blog posts. Deprioritize SEO spam, listicles, AI-generated summary sites. When you see a source cited repeatedly across other sources, that's a signal to fetch the original. **In Pulse mode, invert this slightly:** the community threads ARE the primary source — you're measuring sentiment, not finding canonical docs.
+
+Deduplicate URLs across all sources (SerpAPI / Serper / OpenAlex / Listen Notes / Reddit / Hacker News).
 
 ## Step 3b: RESOLVE OA full-text via Unpaywall (when DOIs are present)
 
@@ -367,6 +395,19 @@ Synthesize around:
 4. **Trends** — where is this heading, and why?
 5. **Open questions** — what hasn't been solved yet?
 
+### Mode: Pulse / Recency
+
+Synthesize what people are actually saying over the window. Cross-platform convergence is the strongest signal — if it shows up on Reddit AND Hacker News AND the web, it's real. Synthesize around:
+1. **TL;DR** — the one thing to know about current sentiment, in 2-3 sentences
+2. **Consensus** — what do people broadly agree on across sources?
+3. **Controversy** — where's the real disagreement or debate?
+4. **Pain points** — what frustrations keep surfacing?
+5. **Excitement** — what are people genuinely enthusiastic about?
+6. **Emerging vs settled** — what's new or gaining momentum vs. accepted wisdom?
+7. **Gaps** — what questions aren't being answered well anywhere?
+
+State the window explicitly ("past 30 days") and lead each source's findings with its engagement signal (upvotes / points / comment counts) so the reader can weight them. Cite real threads with links.
+
 ## Step 6: OUTPUT
 
 Default output is a markdown report in the mode-appropriate skeleton. Ask the user ONLY if it matters:
@@ -383,8 +424,9 @@ slug: [slug-form-of-topic]
 canonical_entity_id: [slug-form-of-topic]   # NEW v3.0.3: stable across renames. Default = slug on first run.
 topic_area: [TopicArea or null]              # NEW v3.0.3
 type: research
-skill_version: "3.2.0"                       # NEW v3.0.3
-mode: [how-to | comparison | explainer | landscape]
+skill_version: "3.3.0"                       # NEW v3.0.3
+mode: [how-to | comparison | explainer | landscape | pulse]
+window: null                                 # NEW v3.3.0: Pulse mode only — e.g. "last 30 days"; null otherwise
 run_date: YYYY-MM-DD
 status: complete
 apis_used: [serpapi, serper, firecrawl, yt-dlp]
@@ -447,7 +489,7 @@ Every run saves to disk. Path resolution per `CONVENTIONS.md`:
 
 6. **WRITE `recipe.yaml` to the archive root + UPDATE topic-area `MANIFEST.yaml`** (NEW in v3.0.3 — mandatory). See `~/.claude/skills/_research-lib/SCHEMAS.md` for full schemas, identity resolution, `source_key` derivation, and merge-key precedence. Summary:
    - **Resolve `canonical_entity_id` first** per SCHEMAS.md "Identity resolution procedure": if the archive folder already exists, READ existing recipe.yaml and reuse its `canonical_entity_id` verbatim — never change it on a re-run. Only set it (= slug) on first creation. Renames go to `aliases[]`, not to `canonical_entity_id`.
-   - **`recipe.yaml`** in the archive folder with `schema_version: 1`, `skill_version: "3.2.0"`, `skill_name: research`, `generated_at` + `last_updated_at` (UTC ISO-8601), `target` block (with `canonical_entity_id` from above, `topic_area` as string name OR YAML null if ungrouped — NOT the string "ungrouped"), `sources[]` array. Each source MUST have: `source_key` (per SCHEMAS.md rules — e.g., `website_{domain}`, `youtube_{handle}`, `podcast_listen-notes_{id}`), `type`, `discovery_method`, `api_used`, `captured_count`, `last_run_at_utc`, `resumable`. **Skill-specific top-level fields allowed**: `mode` (the research mode classified in Step 1).
+   - **`recipe.yaml`** in the archive folder with `schema_version: 1`, `skill_version: "3.3.0"`, `skill_name: research`, `generated_at` + `last_updated_at` (UTC ISO-8601), `target` block (with `canonical_entity_id` from above, `topic_area` as string name OR YAML null if ungrouped — NOT the string "ungrouped"), `sources[]` array. Each source MUST have: `source_key` (per SCHEMAS.md rules — e.g., `website_{domain}`, `youtube_{handle}`, `podcast_listen-notes_{id}`), `type`, `discovery_method`, `api_used`, `captured_count`, `last_run_at_utc`, `resumable`. **Skill-specific top-level fields allowed**: `mode` (the research mode classified in Step 1).
    - **For every resumable source, write a captured-IDs file in `_raw/`** with stable item IDs (one per line). Counts alone aren't enough — v3.1 tombstone detection needs stable IDs.
    - **`topics/{TopicArea}/MANIFEST.yaml`** (or `topics/MANIFEST.yaml` if topic_area is null). **Merge key precedence**: match by `canonical_entity_id` first, `path` second (legacy fallback). NEVER use `slug` alone — slug can change on rename. Entry fields: `slug`, `canonical_entity_id`, `path`, `created_at_utc` (first run only), `last_updated_at_utc`, `skill_version_at_creation` (first only), `skill_version_at_last_update`, `has_recipe_yaml: true`, `sources_summary` keyed by `source_key`.
    - **Use UTC timestamps everywhere** (`date -u +%Y-%m-%dT%H:%M:%SZ` in bash, `datetime.now(timezone.utc).isoformat().replace('+00:00','Z')` in Python). Never local time.
@@ -511,6 +553,10 @@ If a question could go either way (e.g. "best practices for storing API keys"), 
 
 ```
 /research State of AI coding agents in 2026
+```
+
+```
+/research What are people saying about Supabase vs Firebase lately?
 ```
 
 ```
