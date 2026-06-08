@@ -14,7 +14,7 @@ General-purpose internet research. Same plumbing as `/deep-research` (SerpAPI, S
 Reuse the deep-research skill's API keys. One source of truth — no duplicate `.env`.
 
 ```bash
-source ~/.claude/skills/deep-research/.env && echo "Keys: SERPAPI=${SERPAPI_KEY:+OK} SERPER=${SERPER_API_KEY:+OK} FIRECRAWL=${FIRECRAWL_API_KEY:+OK} OPENALEX=${OPENALEX_KEY:+OK} UNPAYWALL=${UNPAYWALL_EMAIL:+OK} EXA=${EXA_API_KEY:+OK} GITHUB=${GITHUB_TOKEN:+OK} LISTEN=${LISTEN_API_KEY:+OK} REDDIT=${REDDIT_CLIENT_ID:+OK}"
+source ~/.claude/skills/deep-research/.env && echo "Keys: SERPAPI=${SERPAPI_KEY:+OK} SERPER=${SERPER_API_KEY:+OK} FIRECRAWL=${FIRECRAWL_API_KEY:+OK} OPENALEX=${OPENALEX_KEY:+OK} UNPAYWALL=${UNPAYWALL_EMAIL:+OK} EXA=${EXA_API_KEY:+OK} GITHUB=${GITHUB_TOKEN:+OK} LISTEN=${LISTEN_API_KEY:+OK}"
 python -m yt_dlp --version
 python -c "import youtube_transcript_api" 2>&1 || python -m pip install youtube-transcript-api $([ -z "$VIRTUAL_ENV" ] && echo "--user") 2>&1 | tail -3
 ```
@@ -252,27 +252,30 @@ curl -s "https://hn.algolia.com/api/v1/search?query=QUERY&tags=comment&numericFi
 ```
 Extract per hit: title, url, points, num_comments, author, created_at, objectID. HN skews technical/builder — note that lens when you synthesize.
 
-**Reddit (OAuth — public JSON is blocked).** Reddit's public `*.json` endpoints return HTTP 403 to datacenter/programmatic requests regardless of User-Agent (verified: curl and WebFetch, on `www`, `old`, and subreddit-scoped paths alike). The authenticated API works, though. If `REDDIT_CLIENT_ID` and `REDDIT_CLIENT_SECRET` are set, get a userless token and query `oauth.reddit.com`:
+**Reddit (RSS + old-HTML — the JSON API is blocked, no app needed).** Reddit's `*.json` endpoints return HTTP 403 to all programmatic requests regardless of User-Agent or IP (verified residential AND datacenter), and self-serve script-app creation is now gated behind the Responsible Builder Policy — so the OAuth/`oauth.reddit.com` path is effectively dead for us. Route around it: `.rss` feeds and `old.reddit.com` HTML are both fully reachable (200 OK, verified 2026-06-08 from residential IP). No token, no app, no `.env` keys.
 
 ```bash
-# 1. Fetch a read-only (client-credentials) token — fetch fresh per run:
-TOKEN=$(curl -s -X POST "https://www.reddit.com/api/v1/access_token" \
-  -u "$REDDIT_CLIENT_ID:$REDDIT_CLIENT_SECRET" \
-  -A "research-skills/3.3 (Claude Code)" \
-  -d "grant_type=client_credentials" | python -c "import sys,json; print(json.load(sys.stdin)['access_token'])")
+UA="windows:precisionfarms-research:v1.0 (by /u/galengrimm)"  # descriptive UA is required
 
-# 2. Query oauth.reddit.com (mirrors the public paths; the UA header is mandatory).
-#    t = hour|day|week|month|year|all — set from the resolved window in Pulse mode.
-curl -s -H "Authorization: bearer $TOKEN" -A "research-skills/3.3 (Claude Code)" \
-  "https://oauth.reddit.com/search?q=QUERY&sort=top&t=month&limit=25&type=link"
+# 1. DISCOVER THREADS. Reddit's native search relevance is weak, so prefer
+#    SerpAPI/Serper `site:reddit.com QUERY` to FIND the right threads; use search
+#    RSS as a supplement. t = hour|day|week|month|year|all (set from the Pulse window).
+curl -s -A "$UA" "https://www.reddit.com/search.rss?q=QUERY&sort=top&t=month&limit=25"
+# or scope to a subreddit:
+curl -s -A "$UA" "https://www.reddit.com/r/SUBREDDIT/search.rss?q=QUERY&restrict_sr=1&sort=top&t=year"
+# Each Atom <entry>: title, author (/u/...), category (=subreddit), link.href (permalink),
+# updated. Self-posts carry body text in <content>; link posts don't.
 
-# 3. For the top 3-5 threads by score, pull comments (the gold is in the comments):
-curl -s -H "Authorization: bearer $TOKEN" -A "research-skills/3.3 (Claude Code)" \
-  "https://oauth.reddit.com/r/SUBREDDIT/comments/POST_ID?sort=top&limit=10"
+# 2. READ THE DISCUSSION (the gold is in the comments). Fetch the thread from
+#    old.reddit.com — server-rendered, comments live in <div class="md"> blocks. The
+#    www host is a JS shell and returns NO comments, so always rewrite www. -> old.
+curl -s -A "$UA" "https://old.reddit.com/r/SUBREDDIT/comments/POST_ID/?sort=top&limit=200"
+# Extract text from each <div class="md"> ... </div> block (strip tags, HTML-decode).
+# The first md block is usually the post body / subreddit sidebar; the rest are comments.
 ```
-Extract per post: title, subreddit, score, num_comments, created_utc, permalink. From comment threads: recurring complaints, praise, and unanswered questions.
+Pull the top 3-5 threads by relevance. Treat the result as an **anecdotal sample of top visible comments, not representative sentiment** — `limit=200` + `sort=top` don't capture full threads and overweight viral/old posts, so mix in a `sort=new` pass and vary the window. Skip `[deleted]`/`[removed]`/automod stubs (the first md block is usually the subreddit sidebar). If `old.reddit.com` serves a login wall or anti-bot interstitial instead of a real thread — it's a best-effort surface, not a stable API — fall back to the SerpAPI snippet for that thread. Extract per post: title, subreddit, author, permalink. From comment text: recurring complaints, praise, and unanswered questions.
 
-**Fallback if the creds aren't set:** surface Reddit threads through SerpAPI/Serper (`site:reddit.com QUERY`) and use the snippets — note in the report's "gaps" field that Reddit was snippet-only. To enable the full path: create a **script** app at https://www.reddit.com/prefs/apps, then add `REDDIT_CLIENT_ID` + `REDDIT_CLIENT_SECRET` to `~/.claude/skills/deep-research/.env`.
+**Etiquette / compliance:** this reads public web pages (RSS + old-HTML), NOT the Data API, so the Responsible Builder Policy's API rules don't apply — but stay polite anyway: descriptive UA as shown, throttle ≥600ms between requests, cap at ~5 threads/run, retain nothing, skip private/quarantined/gated threads rather than retry-looping, and don't collect or retain personal/sensitive user data (derived notes + source URLs only). Do NOT attempt `oauth.reddit.com` or `*.json` — both are blocked and the script-app that would unlock them is gated behind a manual approval flow not worth pursuing for this use.
 
 If HN returns nothing, broaden the query or drop the timestamp to check whether the topic is simply older than the window.
 
