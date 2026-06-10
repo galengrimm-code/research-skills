@@ -1,6 +1,6 @@
 ---
 name: deep-research
-version: "3.3.0"
+version: "3.4.0"
 description: Deep research on AI news, security advisories, tech articles, and industry topics. Scrapes articles, YouTube transcripts, PDFs, and related sources across the internet, then synthesizes into exposure analysis for the user's tech stack. Invoke with /deep-research followed by pasted article text, URLs, or a topic description.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -283,6 +283,15 @@ curl -s -X POST "https://api.firecrawl.dev/v1/scrape" \
 2. Try Playwright: `playwright-cli goto URL` then `playwright-cli snapshot`
 3. If all fail, note in output: "Source unavailable, analysis based on available context"
 
+### Step 3.5: TRACE evidence chains (NEW v3.4.0)
+
+Security coverage is unusually prone to citation laundering — ten outlets reporting "actively exploited in the wild" often all trace back to one tweet or one vendor blog post. Before analyzing, verify the load-bearing claims:
+
+1. **Identify the claims the exposure call rests on** — typically: is it actively exploited, what versions are affected, is there a public PoC, what's the real severity. These are the facts that change "act now" vs "file it."
+2. **Trace each backwards — count by disclosure chain, not by artifact.** For every source repeating a claim, check what IT cites. Outlets echoing one origin count as ONE evidence line, not many. Critically: GHSA, NVD, and the vendor advisory usually all restate the SAME CNA/vendor disclosure — together they are ONE line, not three. Genuinely independent lines for security claims are: (a) the original disclosure chain (vendor/CNA/GHSA/NVD collectively), (b) a separate researcher's independent reproduction or analysis, (c) in-the-wild telemetry (honeypot/scanner data — Shadowserver, GreyNoise, CISA KEV listing). News articles citing any of these add zero lines.
+3. **Fetch the origin when reachable** (cap 3-4 extra fetches, same tier strategy). Spend the budget where it changes the verdict: prioritize the claims that are most decision-changing AND least confirmed. Tracing often needs no fetch at all — the citation is usually visible in already-fetched text. The original disclosure often has narrower affected-version ranges or preconditions than the retellings — that difference frequently flips the exposure verdict.
+4. **Tag each load-bearing claim** with its independent-confirmation count, and carry it into Step 4: single-origin claims get explicit attribution ("per [researcher] only, not independently confirmed"); convergent claims get stated firmly.
+
 ### Step 4: ANALYZE
 
 Once all content is gathered, synthesize into a comprehensive analysis. Structure your thinking around:
@@ -296,6 +305,7 @@ Once all content is gathered, synthesize into a comprehensive analysis. Structur
    - Explicitly note non-exposure for technologies in the "What is NOT exposed to" list (e.g., "you do NOT use AWS — not affected")
    - Surface any current open security items (e.g., the standing Pearls of Parchment Firebase key rotation) if relevant to the finding
    - If the topic doesn't intersect with anything in self.md's stack, say so plainly — "no exposure" is a valid conclusion
+   - **State what would flip the verdict** (NEW v3.4.0): the missing or unconfirmed fact that would move the exposure call between `confirmed`/`likely`/`none` — a version confirmation, patch status, exploit-maturity change, or a dependency you haven't verified is actually in use. An exposure call with known flip conditions is actionable; a static one goes stale silently.
 6. **What should you do?** Prioritized action items for a solo developer. Anchor to his actual operating mode per self.md (single dev machine, no enterprise security tooling, internal vs commercial app distinction).
 7. **Strategic implications?** What does this mean for the app roadmap, security posture, or tech stack decisions? Treat New Maint App (`mntlog.net`) — his only paid SaaS — with more caution than internal tools.
 
@@ -311,7 +321,7 @@ slug: [slug-form]
 canonical_entity_id: [slug-form]             # NEW v3.0.3: stable across renames. Default = slug on first run.
 topic_area: [TopicArea or null]              # NEW v3.0.3
 type: deep-research
-skill_version: "3.3.0"                       # NEW v3.0.3
+skill_version: "3.4.0"                       # NEW v3.0.3
 run_date: YYYY-MM-DD
 status: complete
 apis_used: [serpapi, serper, firecrawl, yt-dlp]
@@ -338,9 +348,17 @@ Generated: YYYY-MM-DD
 ## Technical Detail
 [Full analysis: CVEs, exploit chains, attack vectors, affected versions]
 
+## Claim Provenance
+[From Step 3.5 — the load-bearing claims and what they actually trace back to]
+| Claim | Independent lines | Traces back to | Confidence |
+|-------|-------------------|----------------|------------|
+| Actively exploited | 1 | [single researcher tweet](url) | unconfirmed |
+| Affected: <2.1.4 | 3 | GHSA + NVD + vendor advisory | firm |
+
 ## Exposure Assessment
 [Specific: which services, apps, or data is at risk]
 [Include: "you do NOT use [X]" where relevant, to confirm non-exposure]
+[End with: "What would flip this verdict: ..." — the unconfirmed fact that would change the exposure call]
 
 ## Action Items
 ### Immediate (This Week)
@@ -424,7 +442,7 @@ Every run saves to disk. Path resolution per `CONVENTIONS.md`:
 
 6. **WRITE `recipe.yaml` to the archive root + UPDATE topic-area `MANIFEST.yaml`** (NEW in v3.0.3 — mandatory). See `~/.claude/skills/_research-lib/SCHEMAS.md` for full schemas, identity resolution, `source_key` derivation, and merge-key precedence. Summary:
    - **Resolve `canonical_entity_id` first** per SCHEMAS.md "Identity resolution procedure": if the archive folder already exists, READ existing recipe.yaml and reuse its `canonical_entity_id` verbatim — never change it on a re-run. Only set it (= slug) on first creation. Renames go to `aliases[]`.
-   - **`recipe.yaml`** in the archive folder with `schema_version: 1`, `skill_version: "3.3.0"`, `skill_name: deep-research`, `generated_at` + `last_updated_at` (UTC ISO-8601), `target` block (with `canonical_entity_id` from above, `topic_area` as string name OR YAML null if ungrouped — NOT the string "ungrouped"), `sources[]` array. Each source MUST have: `source_key` (per SCHEMAS.md rules), `type`, `discovery_method`, `api_used`, `captured_count`, `last_run_at_utc`, `resumable`. **Skill-specific top-level fields allowed**: `exposure` (`confirmed | likely | none | null`) and `cves: []` (list of CVE IDs).
+   - **`recipe.yaml`** in the archive folder with `schema_version: 1`, `skill_version: "3.4.0"`, `skill_name: deep-research`, `generated_at` + `last_updated_at` (UTC ISO-8601), `target` block (with `canonical_entity_id` from above, `topic_area` as string name OR YAML null if ungrouped — NOT the string "ungrouped"), `sources[]` array. Each source MUST have: `source_key` (per SCHEMAS.md rules), `type`, `discovery_method`, `api_used`, `captured_count`, `last_run_at_utc`, `resumable`. **Skill-specific top-level fields allowed**: `exposure` (`confirmed | likely | none | null`) and `cves: []` (list of CVE IDs).
    - **For every resumable source, write a captured-IDs file in `_raw/`** with stable item IDs (one per line). Counts alone aren't enough.
    - **`topics/{TopicArea}/MANIFEST.yaml`** (or `topics/MANIFEST.yaml` if topic_area is null). **Merge key precedence**: match by `canonical_entity_id` first, `path` second (legacy fallback). NEVER use `slug` alone. Entry fields: `slug`, `canonical_entity_id`, `path`, `created_at_utc` (first run only), `last_updated_at_utc`, `skill_version_at_creation` (first only), `skill_version_at_last_update`, `has_recipe_yaml: true`, `sources_summary` keyed by `source_key`.
    - **Use UTC timestamps everywhere** (`date -u +%Y-%m-%dT%H:%M:%SZ` in bash, `datetime.now(timezone.utc).isoformat().replace('+00:00','Z')` in Python). Never local time.

@@ -1,6 +1,6 @@
 ---
 name: research
-version: "3.3.0"
+version: "3.4.0"
 description: General-purpose internet research on any topic — how-to guides, comparisons, explainers, landscape surveys, recent community sentiment (what people are saying lately on Reddit/Hacker News), product research. Scrapes articles, YouTube transcripts, PDFs, and community discussion, then synthesizes into a question-type-aware report. Invoke with /research followed by pasted text, URLs, or a topic. For security/vulnerability research with stack-exposure mapping, use /deep-research instead.
 allowed-tools: Bash, WebSearch, WebFetch, Agent
 ---
@@ -371,9 +371,32 @@ curl -s -X POST "https://api.firecrawl.dev/v1/scrape" \
 2. Playwright (`playwright-cli goto URL` → `playwright-cli snapshot`)
 3. Note "Source unavailable, analysis based on available context"
 
+## Step 4.5: TRACE evidence chains (NEW v3.4.0)
+
+Before synthesizing, verify that the conclusions you're about to draw actually rest on independent evidence — not one origin echoed many times.
+
+1. **Identify the load-bearing claims.** From the fetched content, pick the 3-5 claims the synthesis will rest on — the facts that, if wrong, would change the answer. (A recommendation's key benchmark, a "most people have moved to X" trend claim, a pricing/limit fact, a causal claim.)
+2. **Trace each claim backwards.** For each source repeating the claim, check what IT cites. Multiple fetched sources that all trace to one press release, one paper, one benchmark run, or one viral post are **one source, not many** — that's citation laundering, and it's the most common way research overstates confidence.
+3. **Fetch the origin when it's reachable.** If the chain points to a primary source you haven't fetched (the original paper, the actual benchmark, the vendor changelog), fetch it — cap at 3-4 extra fetches per run, same tier strategy as Step 4. Spend the budget where it changes the answer: prioritize the claims that are most decision-changing AND least confirmed; skip origin fetches for claims that are load-bearing but already well-confirmed. Tracing often needs no fetch at all — the citation is usually visible in already-fetched text. The original often differs from the retellings in scope, conditions, or caveats.
+4. **Score independent confirmation — and note its age.** Tag each load-bearing claim with the count of *genuinely independent* evidence lines (different methodology, different data, different author lineage). Repetition count is not confirmation count. Note the date of the newest independent line — three confirmations from 2022 are not current confirmation for a fast-moving claim.
+
+Carry the results into Step 5: claims with 2+ independent lines get stated firmly; claims with one origin get attributed explicitly ("per [origin], unreplicated"); claims whose chain dead-ends get flagged. Skip this step only for Pulse mode (sentiment IS the data — there's no claim chain to trace) or when fewer than 3 sources were fetched (a single-URL run has no cross-source chain to trace).
+
 ## Step 5: SYNTHESIZE (mode-dependent)
 
 Pick the analysis skeleton matching the classified mode. Do NOT use the /deep-research "your exposure" mapping — that's for security work only.
+
+**Universal triage layer (NEW v3.4.0) — required in every mode except Pulse.** However the mode-specific skeleton is structured, the report MUST also sort its substantive findings into three buckets, as a dedicated section:
+
+- **Settled** — consistent across independent sources; state it plainly and note how firm the ground is
+- **Contested** — sources genuinely disagree; present each side's evidence and WHY they diverge (different data? different incentives? different era?). Disagreement is information — the edges of consensus are often the most decision-relevant part of the report
+- **Unknown** — questions the sources don't answer well anywhere; say so rather than papering over
+
+Two rules to keep this section useful instead of ceremonial:
+- **Keep it tight.** One line per finding — this is a triage table, not a restatement of the report body. If a mode-specific section already covers a bucket (Landscape's "Open questions" IS the Unknown bucket), put the content there and reference it here in one line rather than duplicating.
+- **Weight by recency, not just repetition.** In fast-moving domains (pricing, rate limits, benchmarks, model/tool capabilities), evidence older than ~18 months supports "was settled," not "is settled" — move stale-supported claims to Contested or flag the staleness explicitly instead of counting old confirmations as current ones.
+
+Pulse mode already has this triage built into its skeleton (Consensus / Controversy / Gaps) — don't duplicate it there.
 
 ### Mode: How-to / Guide
 
@@ -384,6 +407,7 @@ Synthesize around:
 4. **Tools / stack** — what people actually use to do this today
 5. **Common mistakes** — what do practitioners warn against?
 6. **Recommended path** — given what the user said about their context, what's the best-fit approach?
+7. **What would change this answer** (NEW v3.4.0) — the assumptions the recommendation rests on, and the concrete conditions under which it flips (scale thresholds, pricing changes, a dependency going unmaintained, requirements shifting). A recommendation with known expiration conditions beats a static one.
 
 ### Mode: Comparison
 
@@ -393,6 +417,7 @@ Synthesize around:
 3. **Matrix** — score each option on each axis, with evidence from sources
 4. **Tradeoffs** — what does each option optimize for, and what does it sacrifice?
 5. **Recommendation** — given the user's context, which one and why?
+6. **What would change this answer** (NEW v3.4.0) — the assumptions behind the pick and the concrete conditions that would flip it to a different contender (e.g., "pgvector wins at your scale — flips past ~5M vectors or if you need multi-region replication").
 
 ### Mode: Explainer
 
@@ -442,9 +467,11 @@ slug: [slug-form-of-topic]
 canonical_entity_id: [slug-form-of-topic]   # NEW v3.0.3: stable across renames. Default = slug on first run.
 topic_area: [TopicArea or null]              # NEW v3.0.3
 type: research
-skill_version: "3.3.0"                       # NEW v3.0.3
+skill_version: "3.4.0"                       # NEW v3.0.3
 mode: [how-to | comparison | explainer | landscape | pulse]
 window: null                                 # NEW v3.3.0: Pulse mode only — e.g. "last 30 days"; null otherwise
+next_questions:                              # NEW v3.4.0: the sharper questions this pass surfaced
+  - "[question 1]"
 run_date: YYYY-MM-DD
 status: complete
 apis_used: [serpapi, serper, firecrawl, yt-dlp]
@@ -465,6 +492,22 @@ Mode: [How-to / Comparison / Explainer / Landscape]
 [3-4 sentence synthesis — the answer if the user reads nothing else]
 
 ## [Mode-specific sections — see Step 5]
+
+## Settled / Contested / Unknown
+[Required for all modes except Pulse — see Step 5 universal triage layer]
+
+## Key Claims & Evidence Chains
+[From Step 4.5 — omit only when Step 4.5 was skipped]
+| # | Claim | Independent lines | Traces back to | Confidence |
+|---|-------|-------------------|----------------|------------|
+| 1 | ... | 3 | [origin](url) | firm |
+| 2 | ... | 1 | [single vendor benchmark](url) | attributed, unreplicated |
+
+## Next-Pass Questions
+[3-5 sharper questions this run surfaced — the recursive-loop output. Format each as a
+ready-to-run invocation so a follow-up pass is one paste away:]
+- `/research [refined question 1]`
+- `/research [refined question 2]`
 
 ## Sources Used
 | # | Source | Type | Key Contribution |
@@ -507,7 +550,7 @@ Every run saves to disk. Path resolution per `CONVENTIONS.md`:
 
 6. **WRITE `recipe.yaml` to the archive root + UPDATE topic-area `MANIFEST.yaml`** (NEW in v3.0.3 — mandatory). See `~/.claude/skills/_research-lib/SCHEMAS.md` for full schemas, identity resolution, `source_key` derivation, and merge-key precedence. Summary:
    - **Resolve `canonical_entity_id` first** per SCHEMAS.md "Identity resolution procedure": if the archive folder already exists, READ existing recipe.yaml and reuse its `canonical_entity_id` verbatim — never change it on a re-run. Only set it (= slug) on first creation. Renames go to `aliases[]`, not to `canonical_entity_id`.
-   - **`recipe.yaml`** in the archive folder with `schema_version: 1`, `skill_version: "3.3.0"`, `skill_name: research`, `generated_at` + `last_updated_at` (UTC ISO-8601), `target` block (with `canonical_entity_id` from above, `topic_area` as string name OR YAML null if ungrouped — NOT the string "ungrouped"), `sources[]` array. Each source MUST have: `source_key` (per SCHEMAS.md rules — e.g., `website_{domain}`, `youtube_{handle}`, `podcast_listen-notes_{id}`), `type`, `discovery_method`, `api_used`, `captured_count`, `last_run_at_utc`, `resumable`. **Skill-specific top-level fields allowed**: `mode` (the research mode classified in Step 1).
+   - **`recipe.yaml`** in the archive folder with `schema_version: 1`, `skill_version: "3.4.0"`, `skill_name: research`, `generated_at` + `last_updated_at` (UTC ISO-8601), `target` block (with `canonical_entity_id` from above, `topic_area` as string name OR YAML null if ungrouped — NOT the string "ungrouped"), `sources[]` array. Each source MUST have: `source_key` (per SCHEMAS.md rules — e.g., `website_{domain}`, `youtube_{handle}`, `podcast_listen-notes_{id}`), `type`, `discovery_method`, `api_used`, `captured_count`, `last_run_at_utc`, `resumable`. **Skill-specific top-level fields allowed**: `mode` (the research mode classified in Step 1) and `next_questions[]` (NEW v3.4.0 — the Next-Pass Questions from the report, so a follow-up run can pick up where this one left off; store PLAIN question text, not `/research ...` command syntax — the archive schema must not couple to a CLI convention. The report's Next-Pass Questions section renders the invocation form; the archive stores the question).
    - **For every resumable source, write a captured-IDs file in `_raw/`** with stable item IDs (one per line). Counts alone aren't enough — v3.1 tombstone detection needs stable IDs.
    - **`topics/{TopicArea}/MANIFEST.yaml`** (or `topics/MANIFEST.yaml` if topic_area is null). **Merge key precedence**: match by `canonical_entity_id` first, `path` second (legacy fallback). NEVER use `slug` alone — slug can change on rename. Entry fields: `slug`, `canonical_entity_id`, `path`, `created_at_utc` (first run only), `last_updated_at_utc`, `skill_version_at_creation` (first only), `skill_version_at_last_update`, `has_recipe_yaml: true`, `sources_summary` keyed by `source_key`.
    - **Use UTC timestamps everywhere** (`date -u +%Y-%m-%dT%H:%M:%SZ` in bash, `datetime.now(timezone.utc).isoformat().replace('+00:00','Z')` in Python). Never local time.
