@@ -565,6 +565,16 @@ Every run saves to disk. Path resolution per `CONVENTIONS.md`:
 
 **Never overwrite an existing report.** The prior run may be referenced elsewhere.
 
+## Step 8: OFFER storm-verify (proofing pass — offered, runs only on explicit yes)
+
+After the report is saved and its path reported, offer the proofing pass in ONE line, then stop and wait:
+
+> **Storm protocol available.** Run `/storm-verify` to adversarially check this report's load-bearing claims against their primary sources and produce a claim-safety guide (assert / caveat / avoid)? Reply **y**, or "drop the storm protocol" to finish.
+
+- If the user declines (**n** / "drop" / "skip" / moves on): finish normally. Do NOT run it.
+- If the user accepts: invoke the `storm-verify` skill against the run folder you just saved (pass the full path). It reads this run's `REPORT.md` + `_raw/`, appends a "Verification & Claim Safety" section (non-destructive), then optionally renders a shareable HTML briefing.
+- This is the only optional post-step. Never run it without an explicit yes.
+
 ## Parallelization
 
 Use Agent subagents for:

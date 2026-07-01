@@ -237,6 +237,8 @@ Failed sources requiring user action (e.g., re-auth, cookie extraction, manual r
 
 This format is non-negotiable. The user needs to know exactly which archives succeeded and which need follow-up — a single-line "done" message is forbidden.
 
+(No storm-verify offer here: content-update never changes a topic synthesis — Step 3 skips those as one-shot — so there are never new claims to proof after an update. The `/storm-verify` proofing pass is offered by `/research`, `/deep-research`, and `/content-research`, and can always be run standalone on any prior report.)
+
 ---
 
 ## Step 7: APPEND-ONLY contract (non-negotiable)

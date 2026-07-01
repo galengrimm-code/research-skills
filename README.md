@@ -156,6 +156,17 @@ The skill loads your `self.md`, identifies whether your stack uses the affected 
 
 The skill discovers John Kempf's website, YouTube channel, podcast appearances, press coverage, and social presence; scrapes content; transcribes audio where needed; and produces an entity archive at `~/Documents/AI/Content extraction/john-kempf-research-YYYY-MM-DD/` with subfolders per source type and a master `INDEX.md`.
 
+### `/storm-verify` — proofing companion
+
+A verification pass over a report the other skills already produced. It does **no** web research of its own — it reads a finished run, spawns parallel skeptic agents to check the load-bearing claims against their **primary** sources, tallies fabricated / corrected / demoted claims, and writes an assert-caveat-avoid claim-safety guide.
+
+```
+/storm-verify                       # proofs the most recent run
+/storm-verify <path-to-run-folder>  # proofs a specific report
+```
+
+`/research` and `/deep-research` — the two skills that produce a synthesized, claim-bearing report — **offer** it at the end of a run (it runs only on an explicit yes; decline with "drop the storm protocol"). It appends a `## Verification & Claim Safety` section non-destructively and can render a shareable HTML briefing. `/content-research` (an extraction dossier) and `/content-update` (never changes claims) do not offer it, but any report can be proofed standalone.
+
 ---
 
 ## Architecture
@@ -170,6 +181,9 @@ research-skills/
     ├── research/SKILL.md             ← /research — synthesized answer
     ├── deep-research/SKILL.md        ← /deep-research — security/exposure
     ├── content-research/SKILL.md     ← /content-research — corpus extraction
+    ├── storm-verify/                 ← /storm-verify — proofing pass over a finished report
+    │   ├── SKILL.md
+    │   └── report-template.html      ← reduced STORM template (verification briefing)
     └── _research-lib/                ← shared utilities
         ├── clarify-template.md       ← shared "is this prompt specific enough?" gate
         └── contexts/

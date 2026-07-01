@@ -710,6 +710,10 @@ If versioning was applied, append `(v{N})` to the Saved path. If a new topic-are
 
 ---
 
+(No storm-verify offer here: a content-research run is an extraction dossier — everything the target published — not a synthesized-claims report, so there is rarely a load-bearing claim to proof. The `/storm-verify` offer lives on `/research` and `/deep-research`, where synthesis actually happens. If a specific dossier's `INDEX.md` summary ever does warrant checking, run `/storm-verify <archive-folder>` standalone.)
+
+---
+
 ## API Budget Guidance
 
 Firecrawl is the tightest budget — 500 lifetime credits. Typical runs:
